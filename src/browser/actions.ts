@@ -3,6 +3,17 @@ import type { BrowserSession } from "./session.js";
 import { distillPage } from "./distill.js";
 import type { ErrorCode, Observation, ToolResult } from "../types.js";
 
+/**
+ * Бюджет наблюдения целиком. Список элементов приоритетнее текста: по нему агент
+ * действует, а текст только поясняет. Поэтому элементы не режем никогда, а тексту
+ * отдаём то, что осталось от бюджета.
+ *
+ * Поводом стала главная hh.ru: 2 171 145 символов HTML, 204 элемента, наблюдение
+ * 12 323 символа. При трёх сохраняемых наблюдениях это 37 КБ контекста на одни
+ * снимки страниц, причём на провайдере без кеширования они пересылаются каждый шаг.
+ */
+const OBSERVATION_BUDGET = 8000;
+const MIN_TEXT = 600;
 const MAX_TEXT = 3000;
 const ACTION_TIMEOUT = 8000;
 const NAV_TIMEOUT = 30000;
@@ -62,11 +73,20 @@ export class Actions {
       ? "(страницу прочитать не удалось, список элементов недостоверен)"
       : chunks.join("\n") || "(интерактивных элементов не найдено)";
 
+    // Тексту достаётся остаток бюджета. На страницах с сотнями элементов он
+    // сжимается почти до нуля, и это правильный размен: кликать агент может
+    // только по элементам.
+    const textBudget = Math.max(MIN_TEXT, OBSERVATION_BUDGET - elements.length);
+    const trimmed =
+      text.length > textBudget
+        ? text.slice(0, textBudget) + `\n[…текст обрезан, показано ${textBudget} из ${text.length} симв.]`
+        : text;
+
     return {
       url: page.url(),
       title: await page.title().catch(() => ""),
       elements,
-      text,
+      text: trimmed,
       tabs: this.session.pages().length,
       note: notes || undefined,
     };

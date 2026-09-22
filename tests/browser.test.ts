@@ -105,6 +105,31 @@ describe("браузерный слой", () => {
     expect(elements).toContain("Кнопка в теневом дереве");
   });
 
+  it("на страницах с сотнями элементов ужимает текст, но не элементы", async () => {
+    // На главной hh.ru наблюдение выходило 12 323 символа при 204 элементах, и
+    // набегали они именно элементами: текст дистилляция и так режет до 3000.
+    // Элементы резать нельзя - по ним агент действует, спрятанный элемент это
+    // скрытый тупик. Поэтому бюджет отбирается у текста.
+    const manyButtons = Array.from(
+      { length: 400 },
+      (_, i) => `<button>Кнопка номер ${i} с достаточно длинной подписью</button>`,
+    ).join("");
+    await session
+      .page()
+      .setContent(
+        `<!doctype html><body style="margin:0"><p>${"длинный текст страницы. ".repeat(500)}</p>${manyButtons}</body>`,
+      );
+
+    const observation = await actions.observe();
+
+    // Текст ужат до минимума и честно помечен как обрезанный.
+    expect(observation.text).toContain("текст обрезан");
+    expect(observation.text.length).toBeLessThan(1000);
+    // Элементы целы все до единого, включая последний.
+    expect(observation.elements).toContain("Кнопка номер 0 ");
+    expect(observation.elements).toContain("Кнопка номер 399 ");
+  });
+
   it("не отдаёт в контекст ничего похожего на сырой HTML", async () => {
     await reload();
     const observation = await actions.observe();

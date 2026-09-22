@@ -12,6 +12,28 @@ const MAX_STEPS = 40;
 /** После стольких подряд неудач по одному рефу агента принудительно разворачивают. */
 const MAX_REF_FAILURES = 3;
 
+/**
+ * Обнаружение цикла по повторам одного и того же действия.
+ *
+ * Счётчика неудач мало. Живой прогон по почте дал восемь шагов подряд: клик по письму
+ * открывал постороннюю вкладку, агент возвращался и кликал снова. Каждый клик формально
+ * УСПЕШЕН, поэтому счётчик неудач сбрасывался, и цикл крутился бы до исчерпания лимита
+ * шагов. Ловить надо бесполезный успех, а не только провал.
+ */
+export const LOOP_WINDOW = 6;
+export const LOOP_WARN_AT = 3;
+export const LOOP_STOP_AT = 5;
+
+/** Ключ действия по сути, без формулировок: intent агент меняет, а делает то же самое. */
+export function actionSignature(name: string, input: Record<string, unknown>): string {
+  const parts = [name];
+  for (const field of ["ref", "url", "index", "direction", "value"]) {
+    const value = input[field];
+    if (value !== undefined) parts.push(`${field}=${String(value)}`);
+  }
+  return parts.join("|");
+}
+
 /** Уровень 3 управления контекстом. Выключается сам, если бета недоступна аккаунту. */
 let serverContextEditing = !process.env["DISABLE_SERVER_CONTEXT_EDITING"];
 
@@ -98,6 +120,7 @@ export async function runTask(task: string, deps: ToolDeps): Promise<void> {
   });
 
   const refFailures = new Map<string, number>();
+  const recentActions: string[] = [];
 
   for (let step = 1; step <= MAX_STEPS; step++) {
     const pruned = pruneHistory(messages);
@@ -167,6 +190,31 @@ export async function runTask(task: string, deps: ToolDeps): Promise<void> {
 
       const preview = typeof outcome.content === "string" ? outcome.content.split("\n")[0]! : "[картинка + наблюдение]";
       ui.toolResult(!outcome.isError, preview);
+
+      // Повтор одного и того же действия, успешного или нет.
+      const signature = actionSignature(use.name, (use.input ?? {}) as Record<string, unknown>);
+      recentActions.push(signature);
+      if (recentActions.length > LOOP_WINDOW) recentActions.shift();
+      const repeats = recentActions.filter((s) => s === signature).length;
+
+      if (repeats >= LOOP_STOP_AT) {
+        ui.banner([
+          "\x1b[1m⛔ Задача остановлена харнессом\x1b[0m",
+          "",
+          `Агент зациклился: действие ${signature} повторено ${repeats} раз без продвижения.`,
+          "Дальнейшие шаги жгли бы лимит впустую.",
+        ]);
+        return;
+      }
+
+      if (repeats >= LOOP_WARN_AT && typeof outcome.content === "string") {
+        outcome.content +=
+          `\n\n[ХАРНЕСС] Ты повторил действие ${signature} уже ${repeats} раза, и ничего не ` +
+          `изменилось. Это цикл, повторять его снова бессмысленно. Смени подход: другой ` +
+          `элемент, другой путь к цели, screenshot, вопрос через query_page - или вызови ` +
+          `ask_user, если не понимаешь, что происходит. Ещё ${LOOP_STOP_AT - repeats} повтора, ` +
+          `и задача будет остановлена.`;
+      }
 
       // Если агент третий раз подряд спотыкается об один и тот же реф, разворачиваем его.
       const ref = (use.input as Record<string, unknown>)["ref"];
