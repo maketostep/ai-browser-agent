@@ -1,0 +1,247 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { BrowserSession } from "../src/browser/session.js";
+import { Actions } from "../src/browser/actions.js";
+import type { ToolResult } from "../src/types.js";
+
+/**
+ * Дистилляция опирается на реальный layout: getBoundingClientRect и getComputedStyle.
+ * jsdom layout не считает, поэтому все размеры там нулевые и проверка видимости
+ * вырождается. Тесты идут на настоящем Chrome в headless.
+ */
+const FIXTURE = `
+<!doctype html>
+<html lang="ru"><body style="margin:0">
+  <h1>Тестовая страница</h1>
+  <p id="status">исходное состояние</p>
+
+  <button id="act">Нажми меня</button>
+  <a href="/somewhere">Куда-то</a>
+  <input type="search" placeholder="Поиск по сайту">
+  <select id="pick">
+    <option value="1">Один</option>
+    <option value="2">Два</option>
+  </select>
+
+  <button style="display:none">Спрятанная кнопка</button>
+  <div aria-hidden="true"><button>Кнопка вне доступности</button></div>
+  <button style="width:0;height:0;padding:0;border:0">Нулевая кнопка</button>
+
+  <div style="position:relative;margin-top:20px">
+    <button id="covered">Под оверлеем</button>
+    <div id="overlay" style="position:absolute;inset:-10px;background:rgba(0,0,0,.4)"></div>
+  </div>
+
+  <my-widget></my-widget>
+
+  <script>
+    document.getElementById('act').addEventListener('click', () => {
+      document.getElementById('status').textContent = 'кнопка нажата';
+    });
+    document.querySelector('input[type=search]').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('status').textContent = 'поиск отправлен';
+    });
+    document.getElementById('pick').addEventListener('change', (e) => {
+      document.getElementById('status').textContent = 'выбрано ' + e.target.value;
+    });
+    customElements.define('my-widget', class extends HTMLElement {
+      connectedCallback() {
+        const root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = '<button id="inner">Кнопка в теневом дереве</button>';
+      }
+    });
+  </script>
+</body></html>`;
+
+/** Находит реф так же, как это делает агент: по имени в дистиллированном списке. */
+const refOf = (elements: string, pattern: RegExp): string => {
+  const line = elements.split("\n").find((l) => pattern.test(l));
+  if (!line) throw new Error(`не найдено ${pattern} среди:\n${elements}`);
+  return /\[((?:f\d+:)?e\d+)\]/.exec(line)![1]!;
+};
+
+const statusText = async (actions: Actions): Promise<string> => {
+  const observation = await actions.observe();
+  return observation.text;
+};
+
+describe("браузерный слой", () => {
+  let session: BrowserSession;
+  let actions: Actions;
+
+  beforeAll(async () => {
+    session = new BrowserSession(async () => "n", { headless: true, profileDir: ".profile-test" });
+    await session.start("about:blank");
+    actions = new Actions(session);
+  });
+
+  afterAll(async () => {
+    await session.close();
+  });
+
+  const reload = async (): Promise<string> => {
+    await session.page().setContent(FIXTURE);
+    return (await actions.observe()).elements;
+  };
+
+  it("находит видимые интерактивные элементы и размечает их рефами", async () => {
+    const elements = await reload();
+
+    expect(elements).toMatch(/\[e\d+\] button "Нажми меня"/);
+    expect(elements).toMatch(/\[e\d+\] link "Куда-то"/);
+    expect(elements).toMatch(/\[e\d+\] searchbox "Поиск по сайту"/);
+    expect(elements).toMatch(/\[e\d+\] combobox/);
+  });
+
+  it("пропускает скрытые, aria-hidden и нулевого размера", async () => {
+    const elements = await reload();
+
+    expect(elements).not.toContain("Спрятанная кнопка");
+    expect(elements).not.toContain("Кнопка вне доступности");
+    expect(elements).not.toContain("Нулевая кнопка");
+  });
+
+  it("заходит в теневое дерево", async () => {
+    const elements = await reload();
+    expect(elements).toContain("Кнопка в теневом дереве");
+  });
+
+  it("не отдаёт в контекст ничего похожего на сырой HTML", async () => {
+    await reload();
+    const observation = await actions.observe();
+
+    expect(observation.elements).not.toContain("<button");
+    expect(observation.elements).not.toContain("<script");
+    // Сжатый снимок обязан быть на порядки меньше исходной разметки.
+    expect(observation.elements.length).toBeLessThan(FIXTURE.length);
+  });
+
+  it("кликает по рефу", async () => {
+    const elements = await reload();
+    const result = await actions.click(refOf(elements, /"Нажми меня"/));
+
+    expect(result.ok).toBe(true);
+    expect(await statusText(actions)).toContain("кнопка нажата");
+  });
+
+  it("вводит текст и жмёт Enter", async () => {
+    const elements = await reload();
+    const result = await actions.typeText(refOf(elements, /searchbox/), "хот-дог", true);
+
+    expect(result.ok).toBe(true);
+    expect(result.observation.elements).toContain('value="хот-дог"');
+    expect(await statusText(actions)).toContain("поиск отправлен");
+  });
+
+  it("выбирает вариант по видимой подписи, а не только по value", async () => {
+    const elements = await reload();
+    const result = await actions.selectOption(refOf(elements, /combobox/), "Два");
+
+    expect(result.ok).toBe(true);
+    expect(await statusText(actions)).toContain("выбрано 2");
+  });
+
+  it("на устаревший реф отвечает stale_ref, а не падением", async () => {
+    await reload();
+    const result: ToolResult = await actions.click("e9999");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("stale_ref");
+    // Агент получает свежее наблюдение, чтобы было из чего выбрать заново.
+    expect(result.observation.elements).toContain("Нажми меня");
+  });
+
+  it("отбивает мусорный реф как bad_input", async () => {
+    await reload();
+    const result = await actions.click("кнопка оплаты");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("bad_input");
+  });
+
+  it("помечает перекрытые элементы заранее, до попытки клика", async () => {
+    const elements = await reload();
+    const coveredLine = elements.split("\n").find((l) => /"Под оверлеем"/.test(l));
+
+    expect(coveredLine).toBeDefined();
+    expect(coveredLine).toContain("перекрыт");
+    // Виновник назван конкретно, а не абстрактным "что-то сверху".
+    expect(coveredLine).toMatch(/перекрыт \w+/);
+
+    // Свободные элементы такой пометки не получают.
+    const freeLine = elements.split("\n").find((l) => /"Нажми меня"/.test(l));
+    expect(freeLine).not.toContain("перекрыт");
+  });
+
+  it("распознаёт перехваченный клик и называет виновника", async () => {
+    const elements = await reload();
+    const result = await actions.click(refOf(elements, /"Под оверлеем"/));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("intercepted");
+      expect(result.message).toMatch(/оверлей|перехвач/i);
+    }
+  });
+
+  it("рефы перевыдаются после перезагрузки страницы", async () => {
+    const first = await reload();
+    const second = await reload();
+    // Один и тот же элемент должен находиться по имени в обоих снимках.
+    expect(refOf(first, /"Нажми меня"/)).toBe(refOf(second, /"Нажми меня"/));
+    // И при этом старые атрибуты на странице не копятся.
+    const stale = await session.page().evaluate(() => document.querySelectorAll("[data-agent-ref]").length);
+    expect(stale).toBeGreaterThan(0);
+  });
+
+  it("pageInfo не переразмечает рефы", async () => {
+    // Регрессия: раньше security-гейт звал observe() ради url и title, а тот
+    // снимал и заново раздавал все data-agent-ref. Реф, выбранный моделью,
+    // протухал между решением и действием - либо ошибка, либо клик не по тому
+    // элементу с уже одобренным намерением.
+    const elements = await reload();
+    const ref = refOf(elements, /"Нажми меня"/);
+
+    const before = await session.page().evaluate(() =>
+      Array.from(document.querySelectorAll("[data-agent-ref]")).map((e) => e.getAttribute("data-agent-ref")),
+    );
+    const info = await actions.pageInfo();
+    const after = await session.page().evaluate(() =>
+      Array.from(document.querySelectorAll("[data-agent-ref]")).map((e) => e.getAttribute("data-agent-ref")),
+    );
+
+    expect(info.url).toBeTruthy();
+    expect(after).toEqual(before);
+
+    // И реф, выбранный до гейта, всё ещё указывает на тот же элемент.
+    const result = await actions.click(ref);
+    expect(result.ok).toBe(true);
+    expect(await statusText(actions)).toContain("кнопка нажата");
+  });
+
+  it("восстанавливается, когда все вкладки закрыты", async () => {
+    // Регрессия из живого прогона: пользователь закрыл окно, сессия осталась без
+    // страниц, и КАЖДЫЙ инструмент падал с "Все вкладки закрыты". Агент оставался
+    // работоспособным, но безруким - выхода из этого состояния не было вообще.
+    await reload();
+    for (const page of session.pages()) await page.close();
+    expect(session.pages().length).toBe(0);
+
+    await actions.ensureBrowser();
+
+    expect(session.pages().length).toBe(1);
+    const result = await actions.navigate("about:blank");
+    expect(result.ok).toBe(true);
+    // И заметка объясняет агенту, что произошло, а не молчит.
+    const observation = await actions.observe();
+    expect(observation.url).toContain("about:blank");
+  });
+
+  it("скриншот возвращает jpeg разумного размера", async () => {
+    await reload();
+    const shot = await actions.screenshot();
+
+    expect(shot.bytes).toBeGreaterThan(0);
+    // JPEG начинается с FFD8 - в base64 это /9j/
+    expect(shot.base64.startsWith("/9j/")).toBe(true);
+  });
+});

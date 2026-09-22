@@ -1,0 +1,23 @@
+{
+  "name": "ai-browser-agent",
+  "version": "1.0.0",
+  "description": "Автономный AI-агент, управляющий видимым браузером",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
+    "playwright": "^1.63.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
