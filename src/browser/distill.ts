@@ -31,7 +31,8 @@ export type DistillOptions = {
  */
 export function distillPage(opts: DistillOptions): DistillResult {
   const { prefix, maxText } = opts;
-  const out: string[] = [];
+  type Entry = { el: Element; line: string; inView: boolean; covered: boolean };
+  const entries: Entry[] = [];
   const seen = new Set<Element>();
   let n = 0;
 
@@ -114,14 +115,18 @@ export function distillPage(opts: DistillOptions): DistillResult {
    * клик перехватят - ровно та ошибка, которую иначе агент узнаёт только ударившись.
    * Помечаем заранее, чтобы он не тратил шаги на заведомо обречённые клики.
    */
-  const obscuredBy = (el: Element): string | null => {
+  const centerInView = (el: Element): boolean => {
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    // Центр вне вьюпорта - судить не о чем, элемент просто надо доскроллить.
-    if (cx < 0 || cy < 0 || cx >= window.innerWidth || cy >= window.innerHeight) return null;
+    return cx >= 0 && cy >= 0 && cx < window.innerWidth && cy < window.innerHeight;
+  };
 
-    const top = document.elementFromPoint(cx, cy);
+  const obscuredBy = (el: Element): string | null => {
+    // Центр вне вьюпорта - судить не о чем, элемент просто надо доскроллить.
+    if (!centerInView(el)) return null;
+    const rect = el.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     if (!top || top === el || el.contains(top)) return null;
 
     const cls = typeof top.className === "string" ? top.className.trim().split(/\s+/)[0] : "";
@@ -165,8 +170,45 @@ export function distillPage(opts: DistillOptions): DistillResult {
       const blocker = obscuredBy(el);
       if (blocker) state.push("перекрыт " + blocker);
       const suffix = state.length > 0 ? " [" + state.join(",") + "]" : "";
-      out.push("[" + ref + "] " + role + " " + JSON.stringify(name) + suffix);
+      const line = "[" + ref + "] " + role + " " + JSON.stringify(name) + suffix;
+      entries.push({ el, line, inView: centerInView(el), covered: blocker !== null });
     }
+  };
+
+  /** Лежит ли элемент в слое position: fixed - так живут окна поверх страницы. */
+  const inFixedLayer = (el: Element): boolean => {
+    let node: Element | null = el;
+    while (node) {
+      if (window.getComputedStyle(node).position === "fixed") return true;
+      node = node.parentElement ?? ((node.getRootNode() as ShadowRoot).host ?? null);
+    }
+    return false;
+  };
+
+  /**
+   * Окно поверх страницы без aria-modal.
+   *
+   * Сайт с правильной разметкой прячет страницу под окном через aria-hidden, и она
+   * отсеивается сама. Окно адреса на Лавке так не делает: наблюдение дало 121
+   * элемент, почти все "перекрыт", а кнопки окна оказались в самом конце. Признак
+   * оверлея - перекрыта большая часть видимых элементов. Тогда оставляем
+   * незакрытые и всё, что внутри fixed-слоя (окно могут доскроллить), а страницу
+   * под ним сворачиваем в одну строку.
+   */
+  const collapseUnderOverlay = (all: Entry[]): Entry[] => {
+    const visible = all.filter((e) => e.inView);
+    const coveredCount = visible.filter((e) => e.covered).length;
+    if (visible.length < 5 || coveredCount / visible.length < 0.6) return all;
+    const kept = all.filter((e) => (e.inView ? !e.covered : inFixedLayer(e.el)));
+    for (const e of all) if (!kept.includes(e)) e.el.removeAttribute("data-agent-ref");
+    const hidden = all.length - kept.length;
+    const summary = {
+      el: document.body,
+      line: `(под оверлеем скрыто ${hidden} элементов страницы: работай с окном выше или закрой его)`,
+      inView: false,
+      covered: false,
+    };
+    return [...kept, summary];
   };
 
   // Рефы живут ровно один снапшот. Чистим предыдущие, чтобы устаревший реф
@@ -175,12 +217,13 @@ export function distillPage(opts: DistillOptions): DistillResult {
     stale.removeAttribute("data-agent-ref");
   }
   walk(document);
+  const shown = collapseUnderOverlay(entries);
 
   const rawText = (document.body?.innerText ?? "").replace(INVISIBLE, "").replace(/\n{3,}/g, "\n\n").trim();
 
   return {
-    elements: out.join("\n"),
+    elements: shown.map((e) => e.line).join("\n"),
     text: rawText.slice(0, maxText),
-    count: n,
+    count: shown.length,
   };
 }

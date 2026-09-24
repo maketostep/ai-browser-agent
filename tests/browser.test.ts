@@ -197,6 +197,36 @@ describe("браузерный слой", () => {
     expect(freeLine).not.toContain("перекрыт");
   });
 
+  it("окно без aria-modal: показывает только его элементы, страницу под ним сворачивает", async () => {
+    // Живой прогон на Лавке: окно адреса без aria-modal дало 121 элемент, из них
+    // почти все "перекрыт", а кнопки окна оказались в самом конце списка.
+    const pageButtons = Array.from({ length: 12 }, (_, i) => `<button>Товар ${i + 1}</button>`).join("");
+    await session.page().setContent(`
+      <div style="height:3000px">${pageButtons}<a href="#footer" style="position:absolute;top:2800px">Подвал</a></div>
+      <a href="#close" style="position:fixed;inset:0;background:rgba(0,0,0,.5)"></a>
+      <div style="position:fixed;top:100px;left:100px;width:400px;height:400px;background:#fff;overflow:auto">
+        <button>Подтвердить адрес</button>
+        <button style="margin-top:900px">Кнопка внизу окна</button>
+      </div>`);
+    const { elements } = await actions.observe();
+    expect(elements).toContain('"Подтвердить адрес"');
+    expect(elements).toContain('"Кнопка внизу окна"');
+    expect(elements).not.toContain('"Товар 1"');
+    expect(elements).not.toContain('"Подвал"');
+    expect(elements).toMatch(/под оверлеем скрыто 13 элементов/);
+  });
+
+  it("небольшой баннер поверх страницы не прячет её", async () => {
+    const pageButtons = Array.from({ length: 12 }, (_, i) => `<button style="display:block">Товар ${i + 1}</button>`).join("");
+    await session.page().setContent(`
+      ${pageButtons}
+      <div style="position:fixed;top:0;left:0;right:0;height:22px;background:#fc0">Баннер <button>Принять</button></div>`);
+    const { elements } = await actions.observe();
+    expect(elements).toContain('"Товар 12"');
+    expect(elements).toContain('"Принять"');
+    expect(elements).not.toMatch(/под оверлеем/);
+  });
+
   it("ждёт окончания анимации: гаснущий оверлей не попадает в наблюдение", async () => {
     // Живой прогон на Лавке: после поиска все товары пришли с пометкой
     // "перекрыт div.fade". Число элементов уже не менялось, а слой ещё гас.
