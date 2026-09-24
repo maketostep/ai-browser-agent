@@ -197,6 +197,62 @@ describe("браузерный слой", () => {
     expect(freeLine).not.toContain("перекрыт");
   });
 
+  it("ждёт окончания анимации: гаснущий оверлей не попадает в наблюдение", async () => {
+    // Живой прогон на Лавке: после поиска все товары пришли с пометкой
+    // "перекрыт div.fade". Число элементов уже не менялось, а слой ещё гас.
+    await session.page().setContent(`
+      <style>.fade{position:fixed;inset:0;background:#000;transition:opacity 1.2s linear}</style>
+      <button id="go">Искать</button><a href="#item">Товар</a>
+      <script>
+        document.getElementById('go').addEventListener('click', () => {
+          const fade = document.createElement('div');
+          fade.className = 'fade';
+          document.body.appendChild(fade);
+          fade.getBoundingClientRect();
+          fade.style.opacity = '0';
+          fade.addEventListener('transitionend', () => fade.remove());
+        });
+      </script>`);
+    const { elements } = await actions.observe();
+    const result = await actions.click(refOf(elements, /"Искать"/));
+    const item = result.observation.elements.split("\n").find((l) => /"Товар"/.test(l));
+    expect(item).toBeDefined();
+    expect(item).not.toContain("перекрыт");
+  });
+
+  it("ждёт ответа фонового запроса: результаты поиска попадают в наблюдение", async () => {
+    // Живой прогон на Лавке: после Enter в поиске DOM стоял, анимаций не было, а
+    // товары приходили ответом fetch. Наблюдение снималось до ответа, без товаров.
+    const page = session.page();
+    await page.route("http://agent.test/search", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await route.fulfill({ body: "ok", headers: { "Access-Control-Allow-Origin": "*" } });
+    });
+    await page.setContent(`
+      <button id="find">Найти</button>
+      <script>
+        document.getElementById('find').addEventListener('click', async () => {
+          await fetch('http://agent.test/search');
+          const a = document.createElement('a');
+          a.href = '#r';
+          a.textContent = 'Результат поиска';
+          document.body.appendChild(a);
+        });
+      </script>`);
+    const { elements } = await actions.observe();
+    const result = await actions.click(refOf(elements, /"Найти"/));
+    await page.unroute("http://agent.test/search");
+    expect(result.observation.elements).toContain("Результат поиска");
+  });
+
+  it("вырезает мягкие переносы и невидимые символы из имён и текста", async () => {
+    await session.page().setContent(`<button>Хот&shy;сте&shy;ры&#8203; 250 г</button><p>Сосис&shy;ка в тесте</p>`);
+    const observation = await actions.observe();
+    expect(observation.elements).toContain('"Хотстеры 250 г"');
+    expect(observation.text).toContain("Сосиска в тесте");
+    expect(observation.elements + observation.text).not.toMatch(/[\u00AD\u200B-\u200D\uFEFF]/);
+  });
+
   it("распознаёт перехваченный клик и называет виновника", async () => {
     const elements = await reload();
     const result = await actions.click(refOf(elements, /"Под оверлеем"/));

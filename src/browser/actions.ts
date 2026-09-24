@@ -122,26 +122,37 @@ export class Actions {
    * Агент, которому досталось чтение на 15, видит почти пустую страницу и решает
    * вслепую. Ждём, пока количество элементов перестанет меняться, а не фиксированный
    * срок. networkidle на SPA не наступает вовсе, поэтому он тут не годится.
+   *
+   * Стабильного счётчика тоже мало. Живой прогон на Лавке: после поиска разметка
+   * уже на месте, а поверх гаснет полупрозрачный div.fade, и все товары приходили
+   * с пометкой "перекрыт". Поэтому ждём ещё и конца конечных CSS-анимаций и
+   * переходов. Бесконечные (спиннеры, карусели) не ждём: они не закончатся.
+   *
+   * И ответов fetch/xhr: после Enter в поиске Лавки DOM стоял и анимаций не было,
+   * а товары приходили ответом запроса. Наблюдение уходило без товаров.
    */
   private async settle(): Promise<void> {
     const page = this.session.page();
     await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => {});
 
-    const countInteractive = () =>
+    const probe = () =>
       page
-        .evaluate(
-          () =>
-            document.querySelectorAll("a,button,input,select,textarea,[role],[onclick],[tabindex]")
-              .length,
-        )
-        .catch(() => -1);
+        .evaluate(() => ({
+          count: document.querySelectorAll("a,button,input,select,textarea,[role],[onclick],[tabindex]")
+            .length,
+          animating: document
+            .getAnimations()
+            .some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity),
+        }))
+        .catch(() => ({ count: -1, animating: false }));
 
     let previous = -1;
     for (let attempt = 0; attempt < SETTLE_MAX_CHECKS; attempt++) {
       await page.waitForTimeout(SETTLE_STEP_MS);
-      const current = await countInteractive();
-      if (current > 0 && current === previous) return;
-      previous = current;
+      const { count, animating } = await probe();
+      const loading = this.session.pendingRequests() > 0;
+      if (count > 0 && count === previous && !animating && !loading) return;
+      previous = count;
     }
   }
 

@@ -35,6 +35,9 @@ export function distillPage(opts: DistillOptions): DistillResult {
   const seen = new Set<Element>();
   let n = 0;
 
+  // Мягкие переносы и символы нулевой ширины: на Лавке "Хот\u00ADсте\u00ADры". Человеку
+  // не видны, но тратят токены и ломают модели совпадение текста.
+  const INVISIBLE = /[\u00AD\u200B-\u200D\uFEFF]/g;
   const INTERACTIVE_TAGS = ["a", "button", "input", "select", "textarea", "summary"];
   const INTERACTIVE_ROLES =
     /^(button|link|tab|checkbox|radio|menuitem|menuitemcheckbox|menuitemradio|option|searchbox|textbox|combobox|switch|slider|spinbutton)$/;
@@ -91,7 +94,7 @@ export function distillPage(opts: DistillOptions): DistillResult {
       el.getAttribute("name"),
     ];
     const picked = candidates.find((c) => c && c.trim().length > 0) ?? "";
-    return picked.replace(/\s+/g, " ").trim().slice(0, 80);
+    return picked.replace(INVISIBLE, "").replace(/\s+/g, " ").trim().slice(0, 80);
   };
 
   const isInteractive = (el: Element): boolean => {
@@ -134,7 +137,7 @@ export function distillPage(opts: DistillOptions): DistillResult {
     if (el.getAttribute("aria-selected") === "true") state.push("selected");
     const isTextual = role === "textbox" || role === "searchbox" || role === "combobox";
     if (isTextual && input.value) {
-      state.push('value="' + String(input.value).replace(/\s+/g, " ").slice(0, 40) + '"');
+      state.push('value="' + String(input.value).replace(INVISIBLE, "").replace(/\s+/g, " ").slice(0, 40) + '"');
     }
     return state;
   };
@@ -173,7 +176,7 @@ export function distillPage(opts: DistillOptions): DistillResult {
   }
   walk(document);
 
-  const rawText = (document.body?.innerText ?? "").replace(/\n{3,}/g, "\n\n").trim();
+  const rawText = (document.body?.innerText ?? "").replace(INVISIBLE, "").replace(/\n{3,}/g, "\n\n").trim();
 
   return {
     elements: out.join("\n"),

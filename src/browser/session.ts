@@ -1,8 +1,10 @@
-import { chromium, type BrowserContext, type Page, type Dialog } from "playwright";
+import { chromium, type BrowserContext, type Page, type Dialog, type Request } from "playwright";
 import type { AskHuman } from "../types.js";
 import * as ui from "../ui/render.js";
 
 const PROFILE_DIR = ".profile";
+/** Дольше этого запрос считаем фоновым (метрика, long-polling) и не ждём. */
+const REQUEST_WAIT_MS = 2000;
 
 export type SessionOptions = {
   /** Только для тестов. Продукт по требованию ТЗ всегда показывает браузер. */
@@ -21,6 +23,8 @@ export class BrowserSession {
   private active!: Page;
   /** События, которых нет в DOM: новая вкладка, диалог, редирект. Вычитываются один раз. */
   private notes: string[] = [];
+  /** Незавершённые fetch/xhr по вкладкам и время их старта: SPA дорисовывает страницу их ответами. */
+  private readonly inflight = new Map<Page, Map<Request, number>>();
 
   constructor(
     private readonly askHuman: AskHuman,
@@ -53,6 +57,15 @@ export class BrowserSession {
   }
 
   private wire(page: Page): void {
+    const pending = new Map<Request, number>();
+    this.inflight.set(page, pending);
+    page.on("request", (request) => {
+      const type = request.resourceType();
+      if (type === "fetch" || type === "xhr") pending.set(request, Date.now());
+    });
+    page.on("requestfinished", (request) => pending.delete(request));
+    page.on("requestfailed", (request) => pending.delete(request));
+
     // Нативный confirm/alert блокирует JS страницы до ответа. Отдаём решение человеку:
     // нативный confirm - это ровно то необратимое действие, ради которого существует гейт.
     page.on("dialog", async (dialog: Dialog) => {
@@ -70,6 +83,7 @@ export class BrowserSession {
     });
 
     page.on("close", () => {
+      this.inflight.delete(page);
       if (page !== this.active) return;
       const alive = this.ctx.pages().filter((p) => !p.isClosed());
       const next = alive[alive.length - 1];
@@ -136,6 +150,21 @@ export class BrowserSession {
     this.active = target;
     void target.bringToFront().catch(() => {});
     return true;
+  }
+
+  /**
+   * Сколько свежих fetch/xhr активной вкладки ещё ждут ответа.
+   *
+   * Только моложе REQUEST_WAIT_MS: маяки метрики на Лавке не завершаются никогда,
+   * и без отсечки каждый шаг ждал бы весь потолок стабилизации.
+   */
+  pendingRequests(): number {
+    const now = Date.now();
+    let fresh = 0;
+    for (const started of this.inflight.get(this.page())?.values() ?? []) {
+      if (now - started < REQUEST_WAIT_MS) fresh += 1;
+    }
+    return fresh;
   }
 
   /** Вычитывает накопленные события и очищает очередь. */
