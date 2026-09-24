@@ -106,7 +106,7 @@ export function resolve(): ProviderConfig {
     label: "Anthropic (Claude)",
     baseURL: env("ANTHROPIC_BASE_URL"),
     apiKey: key,
-    mainModel: env("AGENT_MODEL") ?? "claude-opus-5",
+    mainModel: env("AGENT_MODEL") ?? "claude-sonnet-5",
     subModel: env("AGENT_SUB_MODEL") ?? "claude-haiku-4-5",
     features: {
       adaptiveThinking: true,

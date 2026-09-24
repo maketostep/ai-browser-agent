@@ -34,7 +34,7 @@ describe("выбор провайдера", () => {
     const config = resolve();
 
     expect(config.id).toBe("anthropic");
-    expect(config.mainModel).toBe("claude-opus-5");
+    expect(config.mainModel).toBe("claude-sonnet-5");
     expect(config.subModel).toBe("claude-haiku-4-5");
     expect(config.baseURL).toBeUndefined();
     expect(Object.values(config.features).every(Boolean)).toBe(true);
