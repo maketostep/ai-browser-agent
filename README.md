@@ -66,6 +66,17 @@ elicitation. Если клиент elicitation не поддерживает, г
 |---|---|---|
 | z.ai (GLM) | `ZAI_API_KEY=` ([apikey-list](https://z.ai/manage-apikey/apikey-list)) | `glm-4.6` |
 | Anthropic | `ANTHROPIC_API_KEY=` ([console](https://console.anthropic.com)) | `claude-sonnet-5` + `claude-haiku-4-5` на суб-агентах |
+| OpenRouter | `OPENROUTER_API_KEY=`, `OPENROUTER_MODEL=` ([keys](https://openrouter.ai/keys)); по желанию `OPENROUTER_SUB_MODEL=`, `OPENROUTER_BASE_URL=` | нет, модель обязательна |
+
+OpenRouter принимает протокол Anthropic на `https://openrouter.ai/api` и отдаёт модели
+разных вендоров. Под ТЗ подходят `anthropic/*` и `openai/*`. Ключ уходит только в
+`Authorization: Bearer`: если в окружении есть `ANTHROPIC_API_KEY`, SDK его не отправит.
+Проверить связку до запуска агента:
+
+```bash
+npx tsx scripts/check-provider.ts   # какой провайдер выбран, без запросов
+npx tsx scripts/check-api.ts        # живой запрос: авторизация, tool calling, стриминг
+```
 
 Провайдер определяется сам: достаточно задать один ключ. Явно — через `AGENT_PROVIDER`,
 модели — через `AGENT_MODEL` и `AGENT_SUB_MODEL`.

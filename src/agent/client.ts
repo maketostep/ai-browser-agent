@@ -15,9 +15,12 @@ export function client(): Anthropic {
     timeout: 120_000,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     // Совместимые шлюзы расходятся в том, какой заголовок читают: Anthropic ждёт
-    // x-api-key, шлюзы в стиле Claude Code - Authorization: Bearer. SDK отправит оба,
+    // x-api-key, шлюзы в стиле Claude Code - Authorization: Bearer. z.ai получает оба,
     // сервер возьмёт тот, который понимает.
     ...(config.id === "zai" ? { authToken: config.apiKey } : {}),
+    // OpenRouter - только Bearer. apiKey: null обязателен: иначе SDK сам подхватит
+    // ANTHROPIC_API_KEY из окружения и отправит чужой ключ стороннему шлюзу.
+    ...(config.id === "openrouter" ? { apiKey: null, authToken: config.apiKey } : {}),
   });
   return cached;
 }

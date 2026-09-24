@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { resolve } from "../src/agent/provider.js";
+import { resolve, resetProvider } from "../src/agent/provider.js";
+import { client, resetClient } from "../src/agent/client.js";
 
 const KEYS = [
   "AGENT_PROVIDER",
@@ -9,6 +10,10 @@ const KEYS = [
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_BASE_URL",
   "ZAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENROUTER_MODEL",
+  "OPENROUTER_SUB_MODEL",
+  "OPENROUTER_BASE_URL",
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
@@ -95,5 +100,68 @@ describe("выбор провайдера", () => {
 
     process.env["AGENT_PROVIDER"] = "zai";
     expect(() => resolve()).toThrow(/z\.ai/);
+  });
+});
+
+describe("OpenRouter", () => {
+  afterEach(() => {
+    resetProvider();
+    resetClient();
+  });
+
+  it("выбирается по OPENROUTER_API_KEY, модель из OPENROUTER_MODEL", () => {
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    process.env["OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5";
+    const config = resolve();
+
+    expect(config.id).toBe("openrouter");
+    expect(config.baseURL).toBe("https://openrouter.ai/api");
+    expect(config.mainModel).toBe("anthropic/claude-sonnet-5");
+    // Суб-агенты без отдельной модели идут на основную: id дешёвой модели не угадываем.
+    expect(config.subModel).toBe("anthropic/claude-sonnet-5");
+    // Модель за шлюзом может быть любой, расширения Anthropic не отправляем.
+    expect(Object.values(config.features).some(Boolean)).toBe(false);
+  });
+
+  it("берёт OPENROUTER_SUB_MODEL для суб-агентов", () => {
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    process.env["OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5";
+    process.env["OPENROUTER_SUB_MODEL"] = "anthropic/claude-haiku-4.5";
+    expect(resolve().subModel).toBe("anthropic/claude-haiku-4.5");
+  });
+
+  it("срезает /v1 с OPENROUTER_BASE_URL: SDK сам добавит /v1/messages", () => {
+    // Адрес из документации OpenRouter для OpenAI-клиентов - .../api/v1. С ним
+    // запрос ушёл бы на .../api/v1/v1/messages и получил 404.
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    process.env["OPENROUTER_MODEL"] = "openai/gpt-5";
+    process.env["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1/";
+    expect(resolve().baseURL).toBe("https://openrouter.ai/api");
+  });
+
+  it("без модели падает понятной ошибкой", () => {
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    expect(() => resolve()).toThrow(/OPENROUTER_MODEL/);
+  });
+
+  it("явный AGENT_PROVIDER=openrouter сильнее ключа Anthropic", () => {
+    process.env["ANTHROPIC_API_KEY"] = "sk-test";
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    process.env["OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5";
+    process.env["AGENT_PROVIDER"] = "openrouter";
+    expect(resolve().id).toBe("openrouter");
+  });
+
+  it("авторизуется Bearer-токеном и не отправляет чужой x-api-key", () => {
+    // Если в окружении лежит ANTHROPIC_API_KEY, SDK подхватил бы его сам и отправил
+    // OpenRouter чужой ключ в x-api-key.
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-should-not-leak";
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    process.env["OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5";
+    process.env["AGENT_PROVIDER"] = "openrouter";
+    const sdk = client();
+
+    expect(sdk.authToken).toBe("sk-or-test");
+    expect(sdk.apiKey).toBeNull();
   });
 });
