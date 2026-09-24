@@ -4,6 +4,7 @@
  */
 import { client } from "../src/agent/client.js";
 import { provider } from "../src/agent/provider.js";
+import { requireContent } from "../src/agent/retry.js";
 
 process.loadEnvFile(".env");
 
@@ -13,11 +14,13 @@ console.log(`провайдер: ${config.label}, модель: ${config.mainMod
 // 1. Простой вызов: проходит ли авторизация вообще.
 console.log("1) простой вызов...");
 try {
-  const response = await client().messages.create({
+  const response = requireContent(
+    await client().messages.create({
     model: config.mainModel,
     max_tokens: 64,
     messages: [{ role: "user", content: "Ответь одним словом: работает?" }],
-  });
+    }),
+  );
   const text = response.content.find((b) => b.type === "text");
   console.log(`   ok, stop_reason=${response.stop_reason}`);
   console.log(`   ответ: ${text && text.type === "text" ? text.text.trim() : "(нет текста)"}`);
@@ -30,7 +33,8 @@ try {
 // 2. Tool calling: на этом держится весь цикл агента.
 console.log("\n2) вызов инструмента...");
 try {
-  const response = await client().messages.create({
+  const response = requireContent(
+    await client().messages.create({
     model: config.mainModel,
     max_tokens: 256,
     tools: [
@@ -55,7 +59,8 @@ try {
           "Нажми кнопку поиска.",
       },
     ],
-  });
+    }),
+  );
   const use = response.content.find((b) => b.type === "tool_use");
   if (use && use.type === "tool_use") {
     console.log(`   ok, вызван ${use.name} с ${JSON.stringify(use.input)}`);

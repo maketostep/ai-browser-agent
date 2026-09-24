@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { client } from "./client.js";
 import { provider } from "./provider.js";
-import { withRetry, SUB_BACKOFF } from "./retry.js";
+import { withRetry, requireContent, SUB_BACKOFF } from "./retry.js";
 import type { RiskVerdict } from "../types.js";
 import * as ui from "../ui/render.js";
 
@@ -51,7 +51,7 @@ export async function queryPage(question: string, ctx: DeepContext): Promise<str
           `</page>`,
         },
       ],
-    }),
+    }).then(requireContent),
   );
 
   const answer = response.content
@@ -171,7 +171,7 @@ export async function classifyRisk(input: RiskInput): Promise<RiskVerdict> {
               : `Запретов в этой задаче пока не было.`),
           },
         ],
-      }),
+      }).then(requireContent),
     );
 
     const block = response.content.find((b) => b.type === "tool_use");
