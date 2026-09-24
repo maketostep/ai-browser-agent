@@ -174,28 +174,37 @@ export class Actions {
   private async locate(ref: string): Promise<{ locator: Locator } | ToolResult> {
     const resolved = this.resolve(ref);
     if (!resolved) {
-      return this.fail(
+      return this.failWithSample(
         "bad_input",
-        `Реф ${JSON.stringify(ref)} выдуман. Рефы не придумывают, их берут из наблюдения: ` +
-          `${await this.sampleRefs()}. Возьми нужный элемент из списка ниже.`,
+        (sample) =>
+          `Реф ${JSON.stringify(ref)} выдуман. Рефы не придумывают, их берут из наблюдения: ` +
+          `${sample}. Возьми нужный элемент из списка ниже.`,
       );
     }
     const count = await resolved.locator.count().catch(() => 0);
     if (count === 0) {
-      return this.fail(
+      return this.failWithSample(
         "stale_ref",
-        `Рефа ${ref} больше нет на странице. Рефы живут один снапшот: страница изменилась, ` +
-          `возьми элемент из наблюдения ниже. Сейчас доступны, например: ${await this.sampleRefs()}.`,
+        (sample) =>
+          `Рефа ${ref} больше нет на странице. Рефы живут один снапшот: страница изменилась, ` +
+          `возьми элемент из наблюдения ниже. Сейчас доступны, например: ${sample}.`,
       );
     }
     return { locator: resolved.locator.first() };
   }
 
-  /** Пара живых рефов для сообщения об ошибке: слабой модели проще исправиться по образцу. */
-  private async sampleRefs(): Promise<string> {
+  /**
+   * Ошибка с парой живых рефов в сообщении: слабой модели проще исправиться по образцу.
+   *
+   * Одно наблюдение и на подсказку, и на результат. Раньше их было два, и первое
+   * забирало заметки: stale_ref после перезапуска браузера приходил на about:blank
+   * без объяснения, почему страница пустая.
+   */
+  private async failWithSample(error: ErrorCode, message: (sample: string) => string): Promise<ToolResult> {
     const observation = await this.observe();
     const refs = (observation.elements.match(/\[(?:f\d+:)?e\d+\]/g) ?? []).slice(0, 3);
-    return refs.length > 0 ? refs.join(", ") : "(на странице нет интерактивных элементов)";
+    const sample = refs.length > 0 ? refs.join(", ") : "(на странице нет интерактивных элементов)";
+    return { ok: false, error, message: message(sample), observation };
   }
 
   /**

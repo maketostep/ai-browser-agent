@@ -359,6 +359,18 @@ describe("браузерный слой", () => {
     expect(result.observation.note).toContain("Браузер был закрыт");
   });
 
+  it("stale_ref не теряет заметку, объясняющую, почему рефа нет", async () => {
+    // Пробный прогон: окно Chrome закрыли, клик по старому рефу дал stale_ref на
+    // about:blank, но без заметки о перезапуске - подсказка с примерами рефов
+    // вызывала observe() первой и забирала заметки себе.
+    await session.page().context().close();
+    await actions.ensureBrowser();
+
+    const result = await actions.click("e5");
+    expect(result.ok).toBe(false);
+    expect(result.observation.note).toContain("Браузер был закрыт");
+  });
+
   it("скриншот возвращает jpeg разумного размера", async () => {
     await reload();
     const shot = await actions.screenshot();
