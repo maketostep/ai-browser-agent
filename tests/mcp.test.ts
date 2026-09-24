@@ -69,7 +69,12 @@ describe("MCP-вход", () => {
     registerTools(server, { actions, gate: new SecurityGate(async () => "n", floorOnlyClassifier), askHuman: async () => "" });
     const client = await connect(server);
     const names = (await client.listTools()).tools.map((tool) => tool.name);
+    const instructions = client.getInstructions() ?? "";
     await client.close();
+
+    // Системный промпт основного режима до клиента не доходит - правила едут здесь.
+    expect(instructions).toContain("Рефы действительны только в ПОСЛЕДНЕМ наблюдении");
+    expect(instructions.length).toBeLessThan(2000);
 
     expect(names).toContain("click");
     expect(names).not.toContain("query_page");
