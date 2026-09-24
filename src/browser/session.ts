@@ -113,7 +113,9 @@ export class BrowserSession {
       `Страница показала ${dialog.type()}: ${JSON.stringify(dialog.message())}`,
       "Нативный диалог подтверждения - решение за человеком",
     );
-    const answer = await this.askHuman("Подтвердить диалог? [y/N] ");
+    // Вопрос прерван отменой задачи - это отказ. Без catch reject из обработчика
+    // события страницы стал бы необработанным и уронил весь процесс.
+    const answer = await this.askHuman("Подтвердить диалог? [y/N] ").catch(() => "");
     return answer.trim().toLowerCase() === "y";
   }
 

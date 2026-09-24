@@ -33,6 +33,8 @@ export type ProviderConfig = {
   apiKey: string;
   mainModel: string;
   subModel: string;
+  /** На повторах основного цикла после временного сбоя, если основная модель не отвечает. */
+  fallbackModel?: string;
   features: Features;
 };
 
@@ -120,6 +122,7 @@ function resolveOpenRouter(): ProviderConfig {
         "ТЗ требует модели Claude или OpenAI.",
     );
   }
+  const subModel = env("OPENROUTER_SUB_MODEL") ?? env("AGENT_SUB_MODEL") ?? model;
   const baseURL = (env("OPENROUTER_BASE_URL") ?? OPENROUTER_BASE_URL).replace(/\/+$/, "").replace(/\/v1$/, "");
   return {
     id: "openrouter",
@@ -127,7 +130,11 @@ function resolveOpenRouter(): ProviderConfig {
     baseURL,
     apiKey: key,
     mainModel: model,
-    subModel: env("OPENROUTER_SUB_MODEL") ?? env("AGENT_SUB_MODEL") ?? model,
+    subModel,
+    // Запасная по умолчанию - суб-модель: перегрузка одного вышестоящего провайдера
+    // не держит задачу, пока другая модель свободна. Дневную квоту аккаунта это не
+    // обходит - она общая, её ловит быстрый отказ в retry.ts.
+    fallbackModel: env("OPENROUTER_FALLBACK_MODEL") ?? (subModel !== model ? subModel : undefined),
     // ponytail: у anthropic/* моделей OpenRouter пробрасывает часть расширений
     // (caching, thinking), но проверять это надо на живом ключе; пока всё выключено.
     features: NO_EXTENSIONS,

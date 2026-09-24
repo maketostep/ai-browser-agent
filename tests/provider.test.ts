@@ -14,6 +14,7 @@ const KEYS = [
   "OPENROUTER_MODEL",
   "OPENROUTER_SUB_MODEL",
   "OPENROUTER_BASE_URL",
+  "OPENROUTER_FALLBACK_MODEL",
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
@@ -128,6 +129,16 @@ describe("OpenRouter", () => {
     process.env["OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5";
     process.env["OPENROUTER_SUB_MODEL"] = "anthropic/claude-haiku-4.5";
     expect(resolve().subModel).toBe("anthropic/claude-haiku-4.5");
+    // Суб-модель отличается от основной - она же запасная для основного цикла.
+    expect(resolve().fallbackModel).toBe("anthropic/claude-haiku-4.5");
+  });
+
+  it("без отдельной суб-модели запасной нет, OPENROUTER_FALLBACK_MODEL задаёт её явно", () => {
+    process.env["OPENROUTER_API_KEY"] = "sk-or-test";
+    process.env["OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5";
+    expect(resolve().fallbackModel).toBeUndefined();
+    process.env["OPENROUTER_FALLBACK_MODEL"] = "openai/gpt-5-mini";
+    expect(resolve().fallbackModel).toBe("openai/gpt-5-mini");
   });
 
   it("срезает /v1 с OPENROUTER_BASE_URL: SDK сам добавит /v1/messages", () => {

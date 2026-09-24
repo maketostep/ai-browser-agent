@@ -25,7 +25,10 @@ async function main(): Promise<void> {
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const askHuman: AskHuman = async (question) => await rl.question(question);
+  /** Отмена текущей задачи. null - задачи нет, Ctrl+C означает выход. */
+  let current: AbortController | null = null;
+  // Вопрос гейта привязан к задаче: отмена снимает его, и действие не выполняется.
+  const askHuman: AskHuman = async (question) => await rl.question(question, { signal: current?.signal });
 
   const session = new BrowserSession(askHuman);
   const actions = new Actions(session);
@@ -44,7 +47,8 @@ async function main(): Promise<void> {
     "Открываю браузер. Если нужен вход в аккаунт - залогинься вручную прямо в нём,",
     "сессия сохранится в профиле и переживёт перезапуск.",
     "",
-    "Пиши задачу текстом. exit - выход.",
+    "Пиши задачу текстом. Ctrl+C во время задачи - отменить её и дать другую.",
+    "exit или Ctrl+C в ожидании задачи - выход.",
   ]);
 
   await session.start(process.env["START_URL"] ?? "about:blank");
@@ -56,9 +60,17 @@ async function main(): Promise<void> {
     rl.close();
     await session.close();
   };
-  process.on("SIGINT", () => {
+  const onInterrupt = (): void => {
+    if (current && !current.signal.aborted) {
+      ui.warn("Отменяю задачу...");
+      current.abort();
+      return;
+    }
     void shutdown().then(() => process.exit(0));
-  });
+  };
+  // В TTY Ctrl+C перехватывает readline, а не процесс; process - для запуска без терминала.
+  rl.on("SIGINT", onInterrupt);
+  process.on("SIGINT", onInterrupt);
 
   try {
     for (;;) {
@@ -67,10 +79,13 @@ async function main(): Promise<void> {
       if (task === "exit" || task === "quit") break;
 
       const started = Date.now();
+      current = new AbortController();
       try {
-        await runTask(task, { actions, gate, askHuman });
+        await runTask(task, { actions, gate, askHuman }, current.signal);
       } catch (err) {
         ui.error(`Прогон прерван: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        current = null;
       }
       ui.info(`прогон занял ${((Date.now() - started) / 1000).toFixed(1)} с`);
     }

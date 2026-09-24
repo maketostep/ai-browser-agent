@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { actionSignature, LOOP_WINDOW, LOOP_WARN_AT, LOOP_STOP_AT } from "../src/agent/loop.js";
+import { actionSignature, LOOP_WINDOW, LOOP_WARN_AT, LOOP_STOP_AT, modelForAttempt, runTask } from "../src/agent/loop.js";
+import type { ToolDeps } from "../src/agent/tools.js";
 
 /**
  * Регрессия из живого прогона по Яндекс.Почте: восемь шагов подряд агент кликал по
@@ -64,5 +65,39 @@ describe("обнаружение цикла", () => {
   it("пороги расставлены осмысленно", () => {
     expect(LOOP_WARN_AT).toBeLessThan(LOOP_STOP_AT);
     expect(LOOP_STOP_AT).toBeLessThanOrEqual(LOOP_WINDOW);
+  });
+});
+
+describe("запасная модель", () => {
+  it("первая попытка на основной, повторы на запасной", () => {
+    expect(modelForAttempt("main", "backup", 0)).toBe("main");
+    expect(modelForAttempt("main", "backup", 1)).toBe("backup");
+    expect(modelForAttempt("main", "backup", 3)).toBe("backup");
+  });
+
+  it("без запасной модели повторяет основную", () => {
+    expect(modelForAttempt("main", undefined, 2)).toBe("main");
+  });
+});
+
+describe("отмена задачи", () => {
+  it("отменённая задача не делает ни одного запроса к модели", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let observed = 0;
+    const deps = {
+      gate: { beginTask: () => {} },
+      actions: {
+        ensureBrowser: async () => {},
+        observe: async () => {
+          observed += 1;
+          return { url: "about:blank", title: "", elements: "", text: "", tabs: 1 };
+        },
+      },
+      askHuman: async () => "",
+    } as unknown as ToolDeps;
+
+    expect(await runTask("задача", deps, controller.signal)).toBe("cancelled");
+    expect(observed).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { withRetry, MAIN_BACKOFF } from "./retry.js";
+import { withRetry, isAbort, MAIN_BACKOFF } from "./retry.js";
 import { client } from "./client.js";
 import { provider } from "./provider.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
@@ -47,16 +47,37 @@ function isBetaRejection(err: unknown): boolean {
  * и ронять из-за этого всю многошаговую задачу - худшее, что можно сделать: агент
  * теряет весь прогресс на ровном месте.
  */
-async function requestWithRetry(messages: Anthropic.MessageParam[]): Promise<Anthropic.Message> {
-  return await withRetry("основной цикл", MAIN_BACKOFF, () => requestTurn(messages));
+async function requestWithRetry(
+  messages: Anthropic.MessageParam[],
+  signal: AbortSignal | undefined,
+): Promise<Anthropic.Message> {
+  const { mainModel, fallbackModel } = provider();
+  return await withRetry("основной цикл", MAIN_BACKOFF, (attempt) => {
+    const model = modelForAttempt(mainModel, fallbackModel, attempt);
+    if (model !== mainModel && attempt === 1) ui.warn(`переключаюсь на запасную модель ${model}`);
+    return requestTurn(messages, model, signal);
+  });
 }
 
-async function requestTurn(messages: Anthropic.MessageParam[]): Promise<Anthropic.Message> {
+/**
+ * Первая попытка шага - на основной модели, повторы после временного сбоя - на
+ * запасной. Живой прогон: Nvidia за бесплатной моделью отдавала overloaded_error,
+ * а свободная модель рядом простаивала. Следующий шаг снова начинается с основной.
+ */
+export function modelForAttempt(main: string, fallback: string | undefined, attempt: number): string {
+  return attempt > 0 && fallback ? fallback : main;
+}
+
+async function requestTurn(
+  messages: Anthropic.MessageParam[],
+  model: string,
+  signal: AbortSignal | undefined,
+): Promise<Anthropic.Message> {
   const config = provider();
   const caps = config.features;
 
   const params = {
-    model: config.mainModel,
+    model,
     max_tokens: 16000,
     // Стабильный префикс: системный промпт и набор инструментов не меняются за прогон,
     // поэтому кешируются, а изменчивые наблюдения идут после брейкпоинта. Там, где
@@ -84,7 +105,7 @@ async function requestTurn(messages: Anthropic.MessageParam[]): Promise<Anthropi
         ...params,
         betas: ["context-management-2025-06-27"],
         context_management: { edits: [{ type: "clear_tool_uses_20250919" as const }] },
-      });
+      }, { signal });
       stream.on("text", (delta) => process.stdout.write(delta));
       return (await stream.finalMessage()) as unknown as Anthropic.Message;
     } catch (err) {
@@ -94,12 +115,23 @@ async function requestTurn(messages: Anthropic.MessageParam[]): Promise<Anthropi
     }
   }
 
-  const stream = client().messages.stream(params);
+  const stream = client().messages.stream(params, { signal });
   stream.on("text", (delta) => process.stdout.write(delta));
   return await stream.finalMessage();
 }
 
-export async function runTask(task: string, deps: ToolDeps): Promise<void> {
+const cancelled = (): "cancelled" => {
+  ui.warn("Задача отменена. Можно дать новую.");
+  return "cancelled";
+};
+
+/**
+ * signal - отмена человеком (Ctrl+C в терминале). Проверяется перед каждым шагом,
+ * прерывает запрос к модели на лету и вопрос гейта. Уже начатое действие в браузере
+ * доигрывается: обрывать клик на середине опаснее, чем дождаться его.
+ */
+export async function runTask(task: string, deps: ToolDeps, signal?: AbortSignal): Promise<"cancelled" | void> {
+  if (signal?.aborted) return cancelled();
   // Гейт должен знать задачу целиком: без неё безобидная кнопка неотличима от шага
   // к разрушению. И запреты одной задачи не должны переноситься в следующую.
   deps.gate.beginTask(task);
@@ -123,13 +155,15 @@ export async function runTask(task: string, deps: ToolDeps): Promise<void> {
   const recentActions: string[] = [];
 
   for (let step = 1; step <= MAX_STEPS; step++) {
+    if (signal?.aborted) return cancelled();
     const pruned = pruneHistory(messages);
     if (pruned > 0) ui.info(`прунинг контекста: схлопнуто наблюдений ${pruned}`);
 
     let response: Anthropic.Message;
     try {
-      response = await requestWithRetry(messages);
+      response = await requestWithRetry(messages, signal);
     } catch (err) {
+      if (isAbort(err)) return cancelled();
       ui.error(`Запрос к модели не прошёл: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
@@ -182,6 +216,8 @@ export async function runTask(task: string, deps: ToolDeps): Promise<void> {
       try {
         outcome = await dispatch(use.name, use.input, deps);
       } catch (err) {
+        // Отмена во время вопроса гейта: действие не выполнено и одобрением не считается.
+        if (isAbort(err)) return cancelled();
         outcome = {
           content: `Инструмент упал: ${err instanceof Error ? err.message : String(err)}`,
           isError: true,
