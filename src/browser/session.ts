@@ -35,12 +35,16 @@ export class BrowserSession {
   ) {}
 
   async start(startUrl: string): Promise<void> {
+    // Требование ТЗ: браузер должен быть виден. headless включают только тесты.
+    const headless = this.options.headless ?? false;
     this.ctx = await chromium.launchPersistentContext(this.options.profileDir ?? PROFILE_DIR, {
       channel: "chrome",
-      // Требование ТЗ: браузер должен быть виден. headless включают только тесты.
-      headless: this.options.headless ?? false,
-      viewport: { width: 1280, height: 900 },
-      args: ["--disable-blink-features=AutomationControlled", "--no-default-browser-check"],
+      headless,
+      // Фиксированный viewport в видимом окне рисует страницу в углу 1280x900, а
+      // остаток окна остаётся белым - так выглядело развёрнутое окно на записи видео.
+      // null отдаёт странице реальный размер окна. Тестам нужна стабильная геометрия.
+      viewport: headless ? { width: 1280, height: 900 } : null,
+      args: ["--disable-blink-features=AutomationControlled", "--no-default-browser-check", "--start-maximized"],
     });
 
     this.contextClosed = false;
