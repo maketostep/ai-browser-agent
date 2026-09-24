@@ -347,6 +347,18 @@ describe("браузерный слой", () => {
     expect(observation.url).toContain("about:blank");
   });
 
+  it("поднимает браузер заново, если его закрыли целиком", async () => {
+    // Пробный прогон MCP-режима: человек залогинился и закрыл окно Chrome, и каждый
+    // инструмент падал на "browser has been closed".
+    await session.page().context().close();
+
+    await actions.ensureBrowser();
+
+    const result = await actions.navigate("about:blank");
+    expect(result.ok).toBe(true);
+    expect(result.observation.note).toContain("Браузер был закрыт");
+  });
+
   it("скриншот возвращает jpeg разумного размера", async () => {
     await reload();
     const shot = await actions.screenshot();

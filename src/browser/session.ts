@@ -25,6 +25,9 @@ export class BrowserSession {
   private notes: string[] = [];
   /** Незавершённые fetch/xhr по вкладкам и время их старта: SPA дорисовывает страницу их ответами. */
   private readonly inflight = new Map<Page, Map<Request, number>>();
+  /** Браузер закрыт: человеком (поднимем заново) или нами через close() (не поднимаем). */
+  private contextClosed = false;
+  private closing = false;
 
   constructor(
     private readonly askHuman: AskHuman,
@@ -38,6 +41,12 @@ export class BrowserSession {
       headless: this.options.headless ?? false,
       viewport: { width: 1280, height: 900 },
       args: ["--disable-blink-features=AutomationControlled", "--no-default-browser-check"],
+    });
+
+    this.contextClosed = false;
+    this.inflight.clear();
+    this.ctx.on("close", () => {
+      this.contextClosed = true;
     });
 
     this.active = this.ctx.pages()[0] ?? (await this.ctx.newPage());
@@ -111,8 +120,16 @@ export class BrowserSession {
    * (пользователь закрыл окно, страница закрыла сама себя, сессия восстановилась
    * странно), page() бросал "Все вкладки закрыты", и каждый следующий инструмент
    * падал там же. Агент оставался работоспособным, но безруким.
+   *
+   * То же с браузером целиком: пробный прогон MCP-режима упал на "browser has been
+   * closed" - человек залогинился и закрыл окно Chrome. Поднимаем браузер заново
+   * на том же профиле, вход при этом сохраняется.
    */
   async ensurePage(): Promise<Page> {
+    if (this.contextClosed && !this.closing) {
+      await this.start("about:blank");
+      this.notes.push("Браузер был закрыт, открыл его заново на том же профиле");
+    }
     const alive = this.ctx.pages().filter((p) => !p.isClosed());
 
     if (!this.active || this.active.isClosed()) {
@@ -180,6 +197,7 @@ export class BrowserSession {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
     await this.ctx.close().catch(() => {});
   }
 }
