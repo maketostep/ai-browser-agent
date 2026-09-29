@@ -1,369 +1,413 @@
 # AI Browser Agent
 
-**Видео работы агента:** [Google Drive](https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing)
-(три прогона по 6–7 минут: терминал и браузер в одном кадре).
+<p>
+  <a href="https://github.com/maketostep/ai-browser-agent/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/maketostep/ai-browser-agent?color=0a7cff"></a>
+  <a href="LICENSE"><img alt="License: ISC" src="https://img.shields.io/badge/license-ISC-green.svg"></a>
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6.svg?logo=typescript&logoColor=white">
+  <img alt="Playwright" src="https://img.shields.io/badge/Playwright-1.63-2EAD33.svg?logo=playwright&logoColor=white">
+  <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
+  <img alt="Tests: 81 passing" src="https://img.shields.io/badge/tests-81%20passing-brightgreen.svg">
+  <a href="https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing"><img alt="Demo video" src="https://img.shields.io/badge/demo-video-red.svg?logo=googledrive&logoColor=white"></a>
+</p>
 
-Агент получает задачу текстом в терминале и решает её в настоящем видимом Chrome. Он сам
-исследует страницу, выбирает, куда нажать, восстанавливается после неудач и спрашивает
-человека перед необратимым действием.
+**English** | [Русский](README.ru.md)
 
-Агент не знает заранее ни одного сайта. Селекторов, путей, названий кнопок и сценарных
-заготовок в коде нет. Как это проверить, описано в разделе «Как проверить, что заготовок нет».
+**Demo video:** [Google Drive](https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing)
+(three runs of 6–7 minutes each, terminal and browser in one frame).
 
-## Запуск
+You type a task in the terminal, and the agent carries it out in a real, visible Chrome. It
+explores the page on its own, picks what to click, recovers from failures and asks you before
+any irreversible action.
+
+The agent knows no website in advance. The code has no selectors, paths, button names or
+scripted scenarios. The section "How to verify there are no scripted hints" shows how to check.
+
+## Getting started
 
 ```bash
 npm install
-cp .env.example .env        # вписать ключ, см. «Провайдер модели»
+cp .env.example .env        # add a key, see "Model provider"
 npm run dev
 ```
 
-Нужен установленный Chrome. Агент запускает его через `channel: "chrome"`, а не bundled
-Chromium: у настоящего Chrome меньше поводов сработать антиботу.
+You need Chrome installed. The agent launches it with `channel: "chrome"` instead of the
+bundled Chromium: real Chrome gives anti-bot systems fewer reasons to fire.
 
-Первый запуск откроет пустой браузер. Если задаче нужен аккаунт, залогиньтесь в нём
-руками. Профиль лежит в `.profile/` и переживает перезапуск процесса.
+The first run opens an empty browser. If a task needs an account, log in by hand in that
+window. The profile lives in `.profile/` and survives process restarts.
 
 ```
-You: Закажи мне BBQ-бургер и картошку фри на lavka.yandex.ru. Дойди до оформления заказа, но не оплачивай.
+You: Order me a BBQ burger and fries on lavka.yandex.ru. Go as far as checkout, but don't pay.
 ```
 
-Передумали посреди задачи: Ctrl+C. Агент прерывает запрос к модели, снимает вопрос гейта
-(действие при этом не выполняется), доигрывает начатый клик и ждёт новую задачу. Ctrl+C в
-ожидании задачи или `exit` закрывают программу.
+Changed your mind mid-task? Press Ctrl+C. The agent aborts the model request, withdraws the
+pending gate question (the action does not run), finishes a click already in progress and
+waits for a new task. Ctrl+C while idle, or `exit`, quits the program.
 
-Закрыли окно Chrome: агент поднимет браузер заново на том же профиле при следующем действии,
-вход сохранится.
+Closed the Chrome window? The agent reopens the browser on the same profile at its next
+action, and your login stays.
 
-## Режим MCP: через Claude Code
+## MCP mode: through Claude Code
 
-Второй вход в то же ядро, для запуска без API-ключа. Сервер отдаёт браузерные инструменты
-по MCP, а думает и выбирает инструменты Claude Code под подпиской пользователя.
+A second entry point into the same core, for running without an API key. The server exposes
+the browser tools over MCP, and Claude Code does the thinking and picks the tools under your
+subscription.
 
 ```bash
 npm install
-claude            # в корне проекта; .mcp.json подключит сервер browser
+claude            # from the project root; .mcp.json registers the browser server
 ```
 
-При первом запуске Claude Code спросит, доверять ли серверу `browser` из `.mcp.json`. Потом
-откроется Chrome на том же профиле `.profile/`, и задачу можно писать прямо в Claude Code.
-Одновременно профиль держит только один Chrome, поэтому `npm run dev` и сессия Claude Code
-с сервером `browser` вместе не запустятся.
+On first launch Claude Code asks whether to trust the `browser` server from `.mcp.json`. Then
+Chrome opens on the same `.profile/`, and you type tasks directly in Claude Code. Only one
+Chrome can hold the profile at a time, so `npm run dev` and a Claude Code session with the
+`browser` server cannot run together.
 
-Без изменений переходят дистилляция страницы, рефы `data-agent-ref`, обработка ошибок
-(`stale_ref`, перехваченный клик, новая вкладка, нативный диалог) и security-гейт. Вопрос
-гейта приходит в Claude Code диалогом MCP elicitation. Если клиент elicitation не
-поддерживает, гейт считает это отказом. Правила работы со страницей из системного промпта
-сервер передаёт клиенту сжатой выжимкой в поле `instructions`.
+Page distillation, `data-agent-ref` refs, error handling (`stale_ref`, intercepted clicks,
+new tabs, native dialogs) and the security gate carry over unchanged. The gate's question
+reaches Claude Code as an MCP elicitation dialog. If the client does not support elicitation,
+the gate treats that as a refusal. The server passes a condensed version of the system
+prompt's page rules to the client in the `instructions` field.
 
-Чего в этом режиме нет:
+What this mode lacks:
 
-| Основной режим (`npm run dev`) | Режим MCP |
+| Main mode (`npm run dev`) | MCP mode |
 |---|---|
-| Собственный агентный цикл, лимит шагов, детектор зацикливания | Цикл ведёт Claude Code |
-| Прунинг наблюдений и серверный context editing | Авто-компакция Claude Code |
-| Суб-агент `query_page` | Нет: ему нужен API-ключ |
-| Классификатор риска и детерминированный пол | Только детерминированный пол и режим после отказа |
+| Own agent loop, step limit, loop detector | Claude Code runs the loop |
+| Observation pruning and server-side context editing | Claude Code auto-compaction |
+| `query_page` sub-agent | None: it needs an API key |
+| Risk classifier and deterministic floor | Deterministic floor and post-refusal mode only |
 
-Архитектуру агента показывает основной режим. MCP-режим позволяет пользоваться тем же
-браузерным слоем по подписке.
+The main mode shows the agent's architecture. MCP mode lets you use the same browser layer
+under a subscription.
 
-## Провайдер модели
+## Model provider
 
-Агент говорит по протоколу Anthropic Messages API. Его понимают Anthropic и совместимые
-шлюзы, поэтому провайдер задаётся конфигурацией.
+The agent speaks the Anthropic Messages API protocol. Anthropic and compatible gateways
+understand it, so the provider is a configuration choice.
 
-| Провайдер | Что положить в `.env` | Модель по умолчанию |
+| Provider | What goes in `.env` | Default model |
 |---|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` ([console](https://console.anthropic.com)) | `claude-sonnet-5`, суб-агенты на `claude-haiku-4-5` |
-| OpenRouter | `OPENROUTER_API_KEY` и `OPENROUTER_MODEL` ([keys](https://openrouter.ai/keys)); по желанию `OPENROUTER_SUB_MODEL`, `OPENROUTER_FALLBACK_MODEL`, `OPENROUTER_BASE_URL` | нет, модель обязательна |
+| Anthropic | `ANTHROPIC_API_KEY` ([console](https://console.anthropic.com)) | `claude-sonnet-5`, sub-agents on `claude-haiku-4-5` |
+| OpenRouter | `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` ([keys](https://openrouter.ai/keys)); optionally `OPENROUTER_SUB_MODEL`, `OPENROUTER_FALLBACK_MODEL`, `OPENROUTER_BASE_URL` | none, the model is required |
 | z.ai (GLM) | `ZAI_API_KEY` ([apikey-list](https://z.ai/manage-apikey/apikey-list)) | `glm-4.6` |
 
-Провайдер определяется по ключу, явно его задаёт `AGENT_PROVIDER`. ТЗ требует модели
-Claude или OpenAI: на OpenRouter это `anthropic/*` и `openai/*`, GLM годится только для
-отладки.
+The agent picks the provider from whichever key is set; `AGENT_PROVIDER` sets it
+explicitly. The original spec requires Claude or OpenAI models: on OpenRouter that means
+`anthropic/*` and `openai/*`. GLM is for debugging only.
 
-Проверить связку до запуска агента:
+Check the setup before running the agent:
 
 ```bash
-npx tsx scripts/check-provider.ts   # какой провайдер выбран, без запросов
-npx tsx scripts/check-api.ts        # живой запрос: авторизация, tool calling, стриминг
+npx tsx scripts/check-provider.ts   # which provider is selected, no requests
+npx tsx scripts/check-api.ts        # live request: auth, tool calling, streaming
 ```
 
-**Расширения Anthropic.** Adaptive thinking, `effort`, серверный context editing и prompt
-caching работают только у Anthropic. Чужой шлюз на лишнее поле отвечает 400, поэтому
-`src/agent/provider.ts` объявляет каждую возможность флагом и не отправляет её туда, где
-её нет. При старте агент печатает, что у текущего провайдера недоступно. На OpenRouter и
-z.ai остаются клиентский прунинг, цикл, инструменты и гейт, но каждый шаг оплачивается
-целиком.
+**Anthropic extensions.** Adaptive thinking, `effort`, server-side context editing and prompt
+caching work only with Anthropic. Other gateways answer 400 to an unknown field, so
+`src/agent/provider.ts` declares each capability as a flag and never sends it where it is
+missing. On startup the agent prints what the current provider lacks. On OpenRouter and z.ai
+you keep client-side pruning, the loop, the tools and the gate, but pay for every step in
+full.
 
-**OpenRouter.** Шлюз принимает протокол Anthropic на `https://openrouter.ai/api`. Ключ
-уходит только в `Authorization: Bearer`, и SDK не подхватит `ANTHROPIC_API_KEY` из
-окружения. Хвост `/v1` в `OPENROUTER_BASE_URL` агент срезает сам: SDK дописывает
-`/v1/messages`.
+**OpenRouter.** The gateway accepts the Anthropic protocol at `https://openrouter.ai/api`.
+The key goes only into `Authorization: Bearer`, and the SDK will not pick up
+`ANTHROPIC_API_KEY` from the environment. The agent strips a trailing `/v1` from
+`OPENROUTER_BASE_URL` itself, because the SDK appends `/v1/messages`.
 
-**Сбои провайдера.** `src/agent/retry.ts` повторяет запрос с паузами 3, 8, 20 и 45 с на
-429, 5xx, ответе без `content` и `overloaded_error` внутри стрима. Повторы шага уходят на
-запасную модель (`OPENROUTER_FALLBACK_MODEL`, по умолчанию суб-модель), следующий шаг снова
-начинается с основной. Исчерпанную квоту агент распознаёт по `x-ratelimit-remaining: 0` и
-сразу пишет, когда она сбросится, вместо минуты бесполезных повторов.
+**Provider failures.** `src/agent/retry.ts` retries with pauses of 3, 8, 20 and 45 s on 429,
+5xx, a response without `content`, and `overloaded_error` inside a stream. Retries of a step
+go to the fallback model (`OPENROUTER_FALLBACK_MODEL`, the sub-model by default); the next
+step starts on the main model again. The agent recognizes an exhausted quota by
+`x-ratelimit-remaining: 0` and reports when it resets, instead of a minute of useless
+retries.
 
-У бесплатных моделей OpenRouter общий дневной лимит на аккаунт: 50 запросов без
-пополнения. Задача на 20 шагов с классификатором риска съедает его почти целиком.
+Free OpenRouter models share a daily limit per account: 50 requests without a top-up. A
+20-step task with the risk classifier uses up almost all of it.
 
-## Как это устроено
+## How it works
 
 ```
-  терминал (REPL)                    процесс Node                        Chrome (видимый)
-  --------------                     ------------                        ----------------
-  You: задача текстом  ──▶  ┌────────────────────────┐
-                            │ agent loop (модель     │
-        🔧 вызов       ◀── │ из .env)               │
-                            │  наблюдение → решение  │
-                            │         │              │
-                            │         ▼ действие     │──▶ Playwright ──▶ страница
-                            │  ┌──────────────┐      │                       │
-                            │  │ security gate│      │◀── дистилляция ◀─────┘
-                            │  └──────┬───────┘      │
-                            │         │ high risk    │
-  Выполнить? [y/N]  ◀──────┼─────────┘              │
-                            │  sub-agents (суб-      │
-                            │  модель): query_page,  │
-                            │  классификатор риска   │
-                            └────────────────────────┘
+  terminal (REPL)                    Node process                        Chrome (visible)
+  ---------------                    ------------                        ----------------
+  You: task in text   ──▶  ┌────────────────────────┐
+                           │ agent loop (model      │
+        🔧 tool call   ◀── │ from .env)             │
+                           │  observation → decision│
+                           │         │              │
+                           │         ▼ action       │──▶ Playwright ──▶ page
+                           │  ┌──────────────┐      │                    │
+                           │  │ security gate│      │◀── distillation ◀─┘
+                           │  └──────┬───────┘      │
+                           │         │ high risk    │
+  Proceed? [y/N]  ◀────────┼─────────┘              │
+                           │  sub-agents (sub-      │
+                           │  model): query_page,   │
+                           │  risk classifier       │
+                           └────────────────────────┘
 ```
 
-Один шаг агента занимает один вызов модели: действие возвращает свежее наблюдение в том же
-результате, без отдельного «а теперь посмотри».
+One agent step costs one model call: an action returns a fresh observation in the same
+result, with no separate "now look" round trip.
 
-| Файл | Отвечает за |
+| File | Responsible for |
 |---|---|
-| `src/index.ts` | REPL, отмена задачи по Ctrl+C |
-| `src/mcp.ts`, `src/mcp-server.ts` | вход MCP: инструменты, elicitation, instructions |
-| `src/browser/distill.ts` | сжатие страницы до списка элементов с рефами, свёртка оверлеев |
-| `src/browser/actions.ts` | действия по рефу, ожидание готовности страницы, классификация ошибок |
-| `src/browser/session.ts` | персистентный профиль, вкладки, нативные диалоги, перезапуск браузера |
-| `src/agent/loop.ts` | цикл, стриминг, запасная модель, детектор зацикливания, лимит шагов |
-| `src/agent/context.ts` | формат наблюдения и прунинг истории |
-| `src/agent/tools.ts` | описания инструментов и диспетчер |
-| `src/agent/security.ts` | гейт подтверждения перед необратимым |
-| `src/agent/subagents.ts` | DOM-суб-агент и классификатор риска |
-| `src/agent/provider.ts`, `client.ts` | выбор провайдера, флаги возможностей, авторизация |
-| `src/agent/retry.ts` | повторы, быстрый отказ на исчерпанной квоте |
-| `src/agent/prompt.ts` | системный промпт |
+| `src/index.ts` | REPL, task cancellation on Ctrl+C |
+| `src/mcp.ts`, `src/mcp-server.ts` | MCP entry point: tools, elicitation, instructions |
+| `src/browser/distill.ts` | compressing a page into a list of elements with refs, collapsing overlays |
+| `src/browser/actions.ts` | actions by ref, waiting for page readiness, error classification |
+| `src/browser/session.ts` | persistent profile, tabs, native dialogs, browser restart |
+| `src/agent/loop.ts` | loop, streaming, fallback model, loop detector, step limit |
+| `src/agent/context.ts` | observation format and history pruning |
+| `src/agent/tools.ts` | tool descriptions and dispatcher |
+| `src/agent/security.ts` | confirmation gate before irreversible actions |
+| `src/agent/subagents.ts` | DOM sub-agent and risk classifier |
+| `src/agent/provider.ts`, `client.ts` | provider selection, capability flags, auth |
+| `src/agent/retry.ts` | retries, fast failure on an exhausted quota |
+| `src/agent/prompt.ts` | system prompt |
 
-## Управление контекстом
+## Context management
 
-Страницу целиком модель не получает никогда. Замеры на `lavka.yandex.ru`:
+The model never receives a whole page. Measurements on `lavka.yandex.ru`:
 
-| Представление | Размер | К raw HTML |
+| Representation | Size | vs raw HTML |
 |---|---|---|
-| Raw HTML | 433 953 симв. | 1x |
-| Playwright `ariaSnapshot()` | 7 153 симв. | 60x |
-| Наш список элементов | 2 321 симв. (63 элемента) | 186x |
-| Наблюдение целиком (элементы, текст, метаданные) | 4 648 симв. (61 элемент) | 93x |
+| Raw HTML | 433,953 chars | 1x |
+| Playwright `ariaSnapshot()` | 7,153 chars | 60x |
+| Our element list | 2,321 chars (63 elements) | 186x |
+| Full observation (elements, text, metadata) | 4,648 chars (61 elements) | 93x |
 
-186x считает только список интерактивных элементов, его можно сравнить с `ariaSnapshot`.
-93x считает весь объект, который уходит в модель, вместе с видимым текстом.
+186x counts only the list of interactive elements, which compares directly with
+`ariaSnapshot`. 93x counts the whole object sent to the model, visible text included.
 
-Наблюдение укладывается в бюджет 8 000 символов: текст страницы получает остаток после
-списка элементов. Сам список агент не режет, потому что действует по нему. На главной hh.ru
-(204 элемента) наблюдение выходит за бюджет, и это осознанный размен.
+An observation fits an 8,000-character budget: the page text gets whatever the element list
+leaves. The agent never trims the list itself, because it acts on it. On the hh.ru home page
+(204 elements) the observation exceeds the budget, and that is a deliberate trade-off.
 
-Дальше работают ещё два уровня:
+Text is cut around what is on screen right now, not from the top of the page. A chat or feed
+scrolled to the bottom shows the agent the latest content, and the window edges carry
+`[…выше ещё N симв.]` and `[…ниже ещё N симв.]` markers ("N more chars above/below"), so the
+agent knows which way to scroll.
 
-- **Клиентский прунинг** (`src/agent/context.ts`): полными в истории остаются последние
-  3 наблюдения, остальные схлопываются в заглушку. Рефы в старых снимках всё равно
-  недействительны.
-- **Серверный context editing** (`clear_tool_uses_20250919`): только у Anthropic,
-  отключается сам, если бета недоступна аккаунту.
+Two more levels work on top of that:
 
-Системный промпт и определения инструментов не меняются за прогон, и у Anthropic они
-кешируются. По каждому шагу терминал печатает `in/out/cache_read`.
+- **Client-side pruning** (`src/agent/context.ts`): the history keeps the last 3
+  observations in full and collapses the rest into a stub. Refs in old snapshots are invalid
+  anyway.
+- **Server-side context editing** (`clear_tool_uses_20250919`): Anthropic only; it turns
+  itself off if the beta is unavailable to the account.
 
-## Адресация элементов без селекторов
+The system prompt and tool definitions do not change during a run, and Anthropic caches
+them. The terminal prints `in/out/cache_read` for every step.
 
-Агент видит строки вида `[e3] searchbox "Поиск"` и возвращает реф. Дистилляция расставляет
-рефы проходом по DOM (`data-agent-ref`), и каждый реф живёт один снимок: после любого
-действия агент получает новые. Устаревший реф даёт ошибку `stale_ref` со свежим
-наблюдением, клик по случайному элементу исключён. Инструмента для клика по CSS-селектору
-нет.
+## Addressing elements without selectors
+
+The agent sees lines like `[e3] searchbox "Поиск"` and answers with a ref. Distillation
+assigns refs while walking the DOM (`data-agent-ref`), and each ref lives for one snapshot:
+after any action the agent gets new ones. A stale ref returns a `stale_ref` error with a fresh
+observation, so a click can never land on a random element. There is no tool for clicking by
+CSS selector.
 
 ## Security layer
 
-Гейт живёт в харнессе, а не в модели, и состоит из трёх независимых уровней. Каждый
-появился после того, как живой прогон пробил предыдущий.
+The gate lives in the harness, not in the model, and has three independent levels. Each one
+appeared after a live run broke through the previous one.
 
-**1. Классификатор.** Для мутирующих инструментов суб-агент оценивает риск по описанию
-элемента, намерению агента, задаче и списку уже запрещённого. Промпт требует судить по
-тому, что элемент делает, а не по тому, как его описал агент.
+**1. Classifier.** For mutating tools, a sub-agent rates the risk from the element's
+description, the agent's stated intent, the task and the list of already refused actions. The
+prompt tells it to judge what the element does, not how the agent described it.
 
-**2. Детерминированный пол.** Трату денег, отправку адресату, удаление, публикацию и
-заявление от имени человека (возраст, личность, согласие) код распознаёт сам.
-Классификатор может поднять оценку выше пола, опустить не может.
+**2. Deterministic floor.** Code itself recognizes spending money, sending to a recipient,
+deleting, publishing, and statements made on the person's behalf (age, identity, consent).
+The classifier can raise the rating above the floor but never lower it.
 
-**3. Режим после отказа.** После запрета человека каждое меняющее состояние действие
-требует отдельного подтверждения, пока человек сам что-нибудь не разрешит.
+**3. Post-refusal mode.** After the person refuses, every state-changing action needs its own
+confirmation until the person approves something again.
 
-Немутирующие инструменты проходят без оценки. Нативные `confirm()` уходят человеку. Сбой
-классификатора гейт трактует как `high`. Отмена задачи во время вопроса гейта считается
-отказом.
+Non-mutating tools pass without a rating. Native `confirm()` dialogs go to the person. A
+classifier failure counts as `high`. Cancelling a task during a gate question counts as a
+refusal.
 
-### Почему пол всё-таки появился
+### Why the floor exists after all
 
-Сначала список опасных действий казался той самой заготовкой, которую запрещает ТЗ. Два
-живых прогона это опровергли.
+At first a list of dangerous actions looked like exactly the kind of scripted hint the spec
+forbids. Two live runs proved otherwise.
 
-Агент обошёл запрет: гейт остановил «Очистить корзину», и агент опустошил корзину кнопкой
-«Уменьшить количество», которую классификатор счёл обратимой. Потом агент подтвердил
-совершеннолетие за пользователя, написав в `intent` «закрыть модальное окно», и прошёл как
-`medium`.
+The agent worked around a refusal: the gate stopped "Clear cart", and the agent emptied the
+cart with the "Decrease quantity" button, which the classifier considered reversible. Later
+the agent confirmed legal age on the user's behalf, wrote "close the modal" as its `intent`,
+and passed as `medium`.
 
-Правки промпта упёрлись в нестабильность: одно и то же подтверждение возраста на
-идентичном промпте получало то `high`, то `low`. Защиту от необратимых действий нельзя
-строить на суждении вероятностной модели.
+Prompt fixes ran into instability: the same age confirmation on an identical prompt got `high`
+on one run and `low` on another. Protection against irreversible actions cannot rest on the
+judgment of a probabilistic model.
 
-ТЗ запрещает подсказки о том, как **решать задачи**: шаги сценариев, селекторы, элементы.
-Правила безопасности ничего не помогают достичь, они ограничивают агента и не знают ни
-одного сайта.
+The spec forbids hints on how to **solve tasks**: scenario steps, selectors, elements. Safety
+rules help achieve nothing; they restrict the agent and know no website.
 
-### Как это проверяется
+### How it is tested
 
 ```bash
-npx tsx scripts/eval-risk.ts 3     # 11 случаев, 3 прогона
+npx tsx scripts/eval-risk.ts 3     # 11 cases, 3 runs
 ```
 
-Eval меряет итоговое решение гейта, а не мнение классификатора. Случаи взяты из живых
-прогонов и сценариев ТЗ: оплата, отклик на вакансию, удаление письма, подтверждение
-возраста, обход запрета. Контрольная группа обычных действий обязана проходить молча.
-Результат: 11/11 на трёх прогонах.
+The eval measures the gate's final decision, not the classifier's opinion. The cases come
+from live runs and spec scenarios: payment, applying for a job, deleting an email, age
+confirmation, working around a refusal. A control group of ordinary actions has to pass
+silently. Result: 11/11 across three runs.
 
-**Защита от инъекций.** Текст страницы помечен `untrusted="true"`, системный промпт
-запрещает выполнять инструкции со страницы. Решение гейта принимает код, который страницу
-не читал, поэтому снять гейт изнутри модели нельзя. Упавший классификатор закрывает гейт
+**Injection defense.** Page text is marked `untrusted="true"`, and the system prompt forbids
+following instructions from the page. Code that never read the page makes the gate decision,
+so nothing inside the model can switch the gate off. A failed classifier closes the gate
 (`tests/security.test.ts`).
 
-## Как проверить, что заготовок нет
+## How to verify there are no scripted hints
 
-Всё, что читает модель, лежит в системном промпте, описаниях инструментов, instructions
-MCP-сервера и промптах суб-агентов. Названий сайтов, селекторов и кнопок там нет:
+Everything the model reads lives in the system prompt, the tool descriptions, the MCP
+server's instructions and the sub-agent prompts. They contain no site names, selectors or
+buttons:
 
 ```bash
 grep -nEi "lavka|лавк|yandex|яндекс|hh\.ru|data-qa|корзин" \
   src/agent/prompt.ts src/agent/tools.ts src/mcp-server.ts src/agent/subagents.ts
-# единственное совпадение: //-комментарий в subagents.ts, модель его не видит
+# the only match: a // comment in subagents.ts that the model never sees
 ```
 
-Комментарии в `src/browser/` называют сайты, на которых нашлись баги: это журнал причин,
-до модели он не доходит. Адреса в коде есть только у провайдеров моделей. URL сайтов агент
-берёт из текста задачи или из `href` на странице.
+Comments in `src/browser/` name the sites where bugs turned up: they are a log of reasons and
+never reach the model. The only addresses in the code belong to model providers. The agent
+takes site URLs from the task text or from `href` attributes on the page.
 
-## Тесты
+## Tests
 
 ```bash
-npm test         # 77 тестов
+npm test         # 81 tests
 npm run typecheck
 ```
 
-Браузерные тесты идут на настоящем Chrome в headless. Дистилляция опирается на реальный
-layout (`getBoundingClientRect`, `getComputedStyle`), а jsdom его не считает: все размеры
-там нулевые, и проверка видимости вырождается.
+Browser tests run on real headless Chrome. Distillation relies on real layout
+(`getBoundingClientRect`, `getComputedStyle`), which jsdom does not compute: every size there
+is zero, and the visibility check degenerates.
 
-Дымовой прогон продового кода наблюдения на живом сайте, без обращения к модели:
+A smoke run of the production observation code on a live site, with no model calls:
 
 ```bash
 npx tsx scripts/smoke-observe.ts https://lavka.yandex.ru
 ```
 
-## Журнал решений
+## Decision log
 
-Замеры лежат в `RESEARCH.md`, исходная спецификация в `SPEC.md`.
+Measurements are in `RESEARCH.md`, the original specification in `SPEC.md` (both in
+Russian).
 
-**Playwright, а не Puppeteer или Selenium.** Нужны персистентный профиль
-(`launchPersistentContext`), работа с фреймами и авто-ожидания. Плюс `ariaSnapshot` из
-коробки дал базу для сравнения с нашей дистилляцией.
+**Playwright rather than Puppeteer or Selenium.** The agent needs a persistent profile
+(`launchPersistentContext`), frame handling and auto-waiting. On top of that, the built-in
+`ariaSnapshot` gave a baseline to compare our distillation against.
 
-**Своя дистилляция вместо `_snapshotForAI`.** Playwright MCP отдаёт готовые рефы через
-внутренний `page._snapshotForAI()`. В Playwright 1.63 такого метода на `Page` нет: есть
-`ariaSnapshot` и `ariaSnapshotJSON`, и рефов в них нет. Своя дистилляция вышла втрое
-компактнее a11y-снапшота и не зависит от приватного API.
+**Own distillation instead of `_snapshotForAI`.** Playwright MCP gets ready-made refs from the
+internal `page._snapshotForAI()`. Playwright 1.63 has no such method on `Page`: there are
+`ariaSnapshot` and `ariaSnapshotJSON`, and neither has refs. Our distillation came out three
+times more compact than the a11y snapshot and does not depend on a private API.
 
-**Модальные окна ломают a11y-подход.** Первый замер `ariaSnapshot()` вернул 290 символов:
-открытый `[role=dialog][aria-modal]` обрезает дерево доступности до себя. Агент на
-a11y-снапшоте видит в этот момент только попап. Отсюда правило в промпте: на новой
-странице сначала распознать и закрыть модалку.
+**Modals break the a11y approach.** The first `ariaSnapshot()` measurement returned 290
+characters: an open `[role=dialog][aria-modal]` trims the accessibility tree down to itself.
+An agent working from the a11y snapshot sees only the popup at that moment. Hence the prompt
+rule: on a new page, recognize and close the modal first.
 
-**`__name is not defined`.** `tsx` компилирует через esbuild с `keepNames` и оборачивает
-внутренние функции в хелпер `__name`. Playwright переносит функцию в страницу через
-`toString()`, хелпера там нет, и дистилляция падала на каждом вызове. POC на чистом `.mjs`
-этого не показывал. Шим уходит в страницу строкой, минуя компиляцию
-(`Actions.shimEsbuildHelpers`).
+**`__name is not defined`.** `tsx` compiles through esbuild with `keepNames` and wraps inner
+functions in a `__name` helper. Playwright moves a function into the page via `toString()`,
+the helper is missing there, and distillation failed on every call. A proof of concept in
+plain `.mjs` never showed this. A shim now goes into the page as a string, bypassing
+compilation (`Actions.shimEsbuildHelpers`).
 
-**Молчаливые `catch`.** Тот же баг вскрыл вторую проблему: ошибку главного фрейма код
-глушил, и агент получал «интерактивных элементов не найдено» вместо «страницу прочитать
-не удалось». Теперь провал главного фрейма попадает в наблюдение предупреждением.
+**Silent `catch` blocks.** The same bug exposed a second problem: the code swallowed the main
+frame's error, and the agent got "no interactive elements found" instead of "failed to read
+the page". Now a main-frame failure lands in the observation as a warning.
 
-**Гейт инвалидировал рефы.** Первый живой прогон дважды упал в `stale_ref`. Перед
-мутирующим действием гейт звал `observe()` ради адреса и заголовка, а `observe()` заново
-раздаёт все `data-agent-ref`. В худшем случае реф указал бы на другой элемент, и клик ушёл
-бы не туда с уже одобренным намерением. Теперь гейт берёт только `pageInfo()`, регрессию
-ловит `browser.test.ts`.
+**The gate invalidated refs.** The first live run failed twice with `stale_ref`. Before a
+mutating action the gate called `observe()` for the URL and title, and `observe()` reassigns
+every `data-agent-ref`. In the worst case a ref would point at a different element, and the
+click would land elsewhere with an already approved intent. The gate now takes only
+`pageInfo()`, and `browser.test.ts` catches the regression.
 
-**Ручной цикл вместо tool runner из SDK.** Цикл контролирует историю (прунинг), момент
-между решением и действием (гейт) и печать вызовов в терминал. `disable_parallel_tool_use`
-держит браузер последовательным.
+**Hand-written loop instead of the SDK tool runner.** The loop controls the history
+(pruning), the moment between decision and action (the gate) and what gets printed to the
+terminal. `disable_parallel_tool_use` keeps the browser sequential.
 
-**Когда страница «готова».** Прогон через MCP на Лавке показал три дефекта наблюдения,
-которые фикстуры не ловили. Первое наблюдение после захода было пустым, пока проявлялась
-модалка. После поиска товары приходили с пометкой «перекрыт div.fade»: слой гас, а число
-элементов уже не менялось. После Enter товаров не было вовсе, их приносил ещё не пришедший
-ответ fetch. Теперь `settle()` ждёт стабильное число элементов, конец конечных CSS-анимаций
-и ответы свежих fetch/xhr. Запросы старше 2 с он не ждёт: маяки метрики не завершаются
-никогда. Заодно дистилляция вырезает мягкие переносы U+00AD: на Лавке они сидели внутри
-названий товаров и ломали модели совпадение текста.
+**When a page is "ready".** An MCP run on Lavka showed three observation defects that the
+fixtures missed. The first observation after navigation was empty while a modal faded in.
+After a search, products came marked "covered by div.fade": the layer was fading, while the
+element count had already stopped changing. After Enter there were no products at all,
+because they arrived in a fetch response that had not come back yet. Now `settle()` waits for
+a stable element count, for finite CSS animations to end and for fresh fetch/xhr responses.
+It ignores requests older than 2 s, since analytics beacons never finish. Distillation also
+strips U+00AD soft hyphens: on Lavka they sat inside product names and broke text matching
+for the model.
 
-**Окна без `aria-modal`.** Правильная разметка прячет страницу под окном через
-`aria-hidden`. Окно адреса на Лавке этого не делает и давало 121 элемент, почти все
-«перекрыт», кнопки окна в конце списка. Если перекрыто не меньше 60% элементов во
-вьюпорте, дистилляция оставляет незакрытые элементы и содержимое `position: fixed` слоя, а
-страницу под окном сворачивает в одну строку. На Лавке вышло 7 элементов. Баннер поверх
-страницы и постоянный `div.fade` над первым рядом товаров порог не задевают.
+**Dialogs without `aria-modal`.** Proper markup hides the page under a dialog with
+`aria-hidden`. Lavka's address dialog does not, and produced 121 elements, almost all
+"covered", with the dialog's buttons at the end of the list. If at least 60% of the elements
+in the viewport are covered, distillation keeps the uncovered elements and the contents of the
+`position: fixed` layer and collapses the page under the dialog into one line. On Lavka that
+left 7 elements. A banner over the page, or a permanent `div.fade` over the first row of
+products, stays below the threshold.
 
-**Браузер закрыли.** Человек залогинился и закрыл окно Chrome, и каждый инструмент падал на
-`browser has been closed`. Сессия восстанавливала закрытые вкладки, но не закрытый браузер.
-Теперь она поднимает Chrome заново на том же профиле и сообщает об этом агенту. Попутно
-нашёлся баг: `stale_ref` вызывал `observe()` дважды, и первый вызов съедал заметки, так что
-агент не узнавал, почему страница пустая.
+**The browser got closed.** A person logged in and closed the Chrome window, and every tool
+failed with `browser has been closed`. The session restored closed tabs but not a closed
+browser. Now it relaunches Chrome on the same profile and tells the agent. Along the way a bug
+turned up: `stale_ref` called `observe()` twice, the first call consumed the notes, and the
+agent never learned why the page was empty.
 
-**Viewport.** Фиксированный viewport 1280×900 рисовал страницу в углу развёрнутого окна, а
-остаток оставался белым. В видимом режиме viewport теперь `null`, страница занимает окно.
-Headless-тесты сохраняют 1280×900 ради стабильной геометрии.
+**Viewport.** A fixed 1280×900 viewport drew the page in a corner of the maximized window and
+left the rest white. In visible mode the viewport is now `null`, and the page fills the
+window. Headless tests keep 1280×900 for stable geometry.
 
-**Sonnet 5 основной моделью.** Шаг агента короткий: прочитать наблюдение, выбрать элемент,
-вызвать инструмент. Sonnet 5 справляется с этим на уровне Opus, стоит $2/$10 за миллион
-токенов против $5/$25 и отвечает быстрее. Opus 5.5 не подходит: он привязывает
-thinking-блоки к неизменной истории, а прунинг заменяет старые наблюдения заглушками, и
-аккаунты, созданные после 31 августа 2026, получают 400. Opus 5 доступен через `AGENT_MODEL`.
+**Custom radio buttons and checkboxes.** A run on hh.ru uncovered two ways to hide a radio
+button. On the skill levels page the `input` sat under a decorative `span` from its own
+`label`: all 60 radios came out "covered", the overlay collapse fired, and a single button
+was left of the page. In a job application form the `input` was hidden entirely, with the
+circle drawn in CSS, and the agent dropped it as invisible. Now an element from the control's
+own `label` does not count as covering it, and a hidden control with a visible label gets its
+ref on the `label`. Playwright rejects a click on such an `input` as intercepted, so the click
+is repeated at the same point with `force`, but only when the interceptor sits inside that
+control's own `label`.
 
-**MCP: сначала отклонён, потом добавлен вторым входом.** Собственному циклу MCP не нужен:
-всё живёт в одном процессе. Второй вход появился потому, что OAuth-токен подписки нельзя
-использовать в собственном приложении, а API-ключ есть не у всех. Через MCP тот же
-браузерный слой и гейт работают под Claude Code, где подписка разрешена.
+**Text around the screen.** In a long chat with an employer, new questions at the bottom never
+made it into the observation: the text was cut from the top of the page twice. Now
+distillation finds the first text visible on screen and builds the window around it. Pinned
+headers are skipped, since they cannot tell the position. The scrolling element may be a
+container inside the page rather than the window.
 
-**Провайдер в конфигурации.** Изначально модель стояла константами. Для GLM через z.ai
-одной подмены `baseURL` не хватило: расширения Anthropic роняют запрос на чужом шлюзе.
-Возможности стали флагами, и агент переехал на OpenRouter одной веткой в `provider.ts`.
-Живая проверка OpenRouter на бесплатных моделях выявила три сбоя, которые обрывали задачу:
-ответ 200 без `content`, `overloaded_error` внутри стрима без HTTP-статуса и исчерпанную
-дневную квоту, на которой цикл минуту ждал впустую. Первые два агент теперь повторяет,
-третий распознаёт сразу.
+**Chrome without warning banners.** Chrome showed yellow bars about unsupported flags:
+`--no-sandbox` (Playwright adds it) and `--disable-blink-features`. The sandbox is now on,
+`--enable-automation` is removed, and an init script hides `navigator.webdriver`.
 
-## Ограничения
+**Sonnet 5 as the main model.** An agent step is short: read the observation, pick an
+element, call a tool. Sonnet 5 handles this on par with Opus, costs $2/$10 per million tokens
+against $5/$25 and answers faster. Opus 5.5 does not fit: it binds thinking blocks to an
+unchanged history, while pruning replaces old observations with stubs, and accounts created
+after August 31, 2026 get a 400. Opus 5 is available via `AGENT_MODEL`.
 
-- Капчу агент не решает. Вход по ТЗ выполняет пользователь, при капче агент зовёт человека.
-- Один REPL, одна задача за раз, без очереди.
-- Только Chrome.
-- Память между сессиями агент не ведёт.
-- Лимит 40 шагов на задачу страхует от зацикливания.
-- Ctrl+C не обрывает клик на середине: агент доигрывает начатое действие и только потом
-  останавливается.
+**MCP: rejected at first, then added as a second entry point.** The agent's own loop does not
+need MCP, since everything lives in one process. The second entry point appeared because a
+subscription OAuth token cannot be used in your own application, and not everyone has an API
+key. Through MCP the same browser layer and gate run under Claude Code, where the subscription
+is allowed.
+
+**Provider as configuration.** At first the model was a constant. For GLM via z.ai, swapping
+`baseURL` alone was not enough: Anthropic extensions break the request on a foreign gateway.
+Capabilities became flags, and moving to OpenRouter took one branch in `provider.ts`. A live
+check of OpenRouter on free models revealed three failures that cut tasks short: a 200
+response without `content`, `overloaded_error` inside a stream with no HTTP status, and an
+exhausted daily quota on which the loop waited for a minute in vain. The agent now retries
+the first two and recognizes the third immediately.
+
+## Limitations
+
+- The agent does not solve captchas. Per the spec, the user handles login, and on a captcha
+  the agent calls for a human.
+- One REPL, one task at a time, no queue.
+- Chrome only.
+- The agent keeps no memory between sessions.
+- A limit of 40 steps per task guards against loops.
+- Ctrl+C does not cut a click short: the agent finishes the action in progress and only then
+  stops.
