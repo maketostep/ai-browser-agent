@@ -128,6 +128,11 @@ export function distillPage(opts: DistillOptions): DistillResult {
     const rect = el.getBoundingClientRect();
     const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     if (!top || top === el || el.contains(top)) return null;
+    // Кастомные радио и чекбоксы (hh.ru и др.) прячут input под span своего label.
+    // Клик в эту точку браузер отдаст label, а тот переключит контрол. Playwright
+    // такой клик отвергает как перехваченный, его доводит Actions.click.
+    const label = top.closest("label");
+    if (label && (label.control === el || label.contains(el))) return null;
 
     const cls = typeof top.className === "string" ? top.className.trim().split(/\s+/)[0] : "";
     return top.tagName.toLowerCase() + (cls ? "." + cls : "");

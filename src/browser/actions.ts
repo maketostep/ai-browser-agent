@@ -286,8 +286,25 @@ export class Actions {
       return this.ok(`Клик по ${ref}`);
     } catch (err) {
       const { code, detail } = this.classifyError(err);
+      if (code === "intercepted" && (await this.coveredByOwnLabel(found.locator))) {
+        // Кастомный радио/чекбокс: сверху span своего label. Клик в эту точку
+        // браузер доставит label, а тот переключит контрол, как у человека.
+        await found.locator.click({ timeout: ACTION_TIMEOUT, force: true });
+        return this.ok(`Клик по ${ref}`);
+      }
       return this.fail(code, detail);
     }
+  }
+
+  private async coveredByOwnLabel(locator: Locator): Promise<boolean> {
+    return locator
+      .evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const label = top?.closest("label");
+        return !!label && (label.control === el || label.contains(el));
+      })
+      .catch(() => false);
   }
 
   async typeText(ref: string, text: string, pressEnter: boolean): Promise<ToolResult> {

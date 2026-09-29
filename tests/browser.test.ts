@@ -227,6 +227,31 @@ describe("браузерный слой", () => {
     expect(elements).not.toMatch(/под оверлеем/);
   });
 
+  it("переключатель под декоративным span своего label не считается перекрытым", async () => {
+    // Живой прогон на hh.ru, уровни навыков: input накрыт span из того же label, все
+    // 60 переключателей шли "перекрыт", и оверлей-эвристика прятала страницу целиком.
+    const rows = Array.from({ length: 8 }, (_, i) =>
+      ["Базовый", "Средний", "Продвинутый"]
+        .map(
+          (level) => `<label style="position:relative;display:inline-block;margin:4px">
+            <input type="radio" name="s${i}" value="${level}" style="margin:0">
+            <span style="position:absolute;inset:0;background:#eee">${level}</span></label>`,
+        )
+        .join(""),
+    ).join("<br>");
+    await session.page().setContent(`${rows}
+      <div style="position:fixed;bottom:0;left:0;right:0"><button>Сохранить</button></div>`);
+    const { elements } = await actions.observe();
+    const radios = elements.split("\n").filter((l) => /\] radio /.test(l));
+
+    expect(elements).not.toMatch(/под оверлеем/);
+    expect(radios).toHaveLength(24);
+    expect(radios.filter((l) => l.includes("перекрыт"))).toHaveLength(0);
+
+    const result = await actions.click(refOf(elements, /radio "Средний"/));
+    expect(result.observation.elements).toMatch(/radio "Средний" \[checked\]/);
+  });
+
   it("ждёт окончания анимации: гаснущий оверлей не попадает в наблюдение", async () => {
     // Живой прогон на Лавке: после поиска все товары пришли с пометкой
     // "перекрыт div.fade". Число элементов уже не менялось, а слой ещё гас.
