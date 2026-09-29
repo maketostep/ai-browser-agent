@@ -1,6 +1,6 @@
 import type { Frame, Locator } from "playwright";
 import type { BrowserSession } from "./session.js";
-import { distillPage } from "./distill.js";
+import { distillPage, type DistillResult } from "./distill.js";
 import type { ErrorCode, Observation, ToolResult } from "../types.js";
 
 /**
@@ -22,6 +22,23 @@ const SETTLE_STEP_MS = 250;
 const SETTLE_MAX_CHECKS = 12;
 
 /**
+ * Урезает текст до бюджета вокруг экрана и говорит агенту, сколько осталось за
+ * краями: так он знает, куда прокрутить, если нужного на странице не видно.
+ */
+function fitText(d: DistillResult, budget: number): string {
+  let { text, textAbove: above, textBelow: below } = d;
+  if (text.length > budget) {
+    const start = Math.max(0, Math.min(d.textAnchor - Math.floor(budget / 10), text.length - budget));
+    above += start;
+    below += text.length - start - budget;
+    text = text.slice(start, start + budget);
+  }
+  const head = above > 0 ? `[…выше ещё ${above} симв.]\n` : "";
+  const tail = below > 0 ? `\n[…ниже ещё ${below} симв.]` : "";
+  return head + text + tail;
+}
+
+/**
  * Действия в браузере. Каждое возвращает свежее наблюдение в том же результате:
  * один шаг агента = один вызов модели, без лишнего round-trip "сделал -> посмотри".
  */
@@ -39,7 +56,7 @@ export class Actions {
     const page = this.session.page();
     const frames = page.frames();
     const chunks: string[] = [];
-    let text = "";
+    let page0: DistillResult | undefined;
     let mainFrameError: string | undefined;
 
     for (let i = 0; i < frames.length; i++) {
@@ -49,7 +66,7 @@ export class Actions {
       try {
         await this.shimEsbuildHelpers(frame);
         const result = await frame.evaluate(distillPage, { prefix, maxText: MAX_TEXT });
-        if (i === 0) text = result.text;
+        if (i === 0) page0 = result;
         if (result.count === 0) continue;
         chunks.push(prefix ? `--- фрейм ${prefix} (${frame.url()}) ---\n${result.elements}` : result.elements);
       } catch (err) {
@@ -77,16 +94,12 @@ export class Actions {
     // сжимается почти до нуля, и это правильный размен: кликать агент может
     // только по элементам.
     const textBudget = Math.max(MIN_TEXT, OBSERVATION_BUDGET - elements.length);
-    const trimmed =
-      text.length > textBudget
-        ? text.slice(0, textBudget) + `\n[…текст обрезан, показано ${textBudget} из ${text.length} симв.]`
-        : text;
 
     return {
       url: page.url(),
       title: await page.title().catch(() => ""),
       elements,
-      text: trimmed,
+      text: page0 ? fitText(page0, textBudget) : "",
       tabs: this.session.pages().length,
       note: notes || undefined,
     };

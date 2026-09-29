@@ -123,7 +123,7 @@ describe("браузерный слой", () => {
     const observation = await actions.observe();
 
     // Текст ужат до минимума и честно помечен как обрезанный.
-    expect(observation.text).toContain("текст обрезан");
+    expect(observation.text).toMatch(/ниже ещё \d+ симв/);
     expect(observation.text.length).toBeLessThan(1000);
     // Элементы целы все до единого, включая последний.
     expect(observation.elements).toContain("Кнопка номер 0 ");
@@ -250,6 +250,38 @@ describe("браузерный слой", () => {
 
     const result = await actions.click(refOf(elements, /radio "Средний"/));
     expect(result.observation.elements).toMatch(/radio "Средний" \[checked\]/);
+  });
+
+  it("длинный текст режет вокруг экрана: в прокрученном вниз чате видны последние сообщения", async () => {
+    // Живой прогон на hh.ru: в длинном чате текст резался с начала страницы, и
+    // новые вопросы работодателя внизу не попадали в наблюдение.
+    const messages = Array.from({ length: 150 }, (_, i) => `<p>Сообщение ${i + 1}: ${"текст ".repeat(10)}</p>`).join("");
+    await session.page().setContent(messages);
+
+    const top = await actions.observe();
+    expect(top.text).toContain("Сообщение 1:");
+    expect(top.text).not.toContain("Сообщение 150:");
+
+    await session.page().evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const bottom = await actions.observe();
+    expect(bottom.text).toContain("Сообщение 150:");
+    expect(bottom.text).not.toContain("Сообщение 1:");
+    expect(bottom.text).toMatch(/выше ещё \d+ симв/);
+  });
+
+  it("чат со своим скроллом и закреплённой шапкой: видны последние сообщения", async () => {
+    // Как на hh.ru: окно не прокручено, прокручен контейнер чата, сверху sticky-шапка.
+    const messages = Array.from({ length: 150 }, (_, i) => `<p>Сообщение ${i + 1}: ${"текст ".repeat(10)}</p>`).join("");
+    await session.page().setContent(`
+      <header style="position:sticky;top:0;background:#fff">Шапка сайта Москва Создать резюме</header>
+      <div id="chat" style="height:500px;overflow:auto">${messages}</div>`);
+    await session.page().evaluate(() => {
+      const chat = document.getElementById("chat")!;
+      chat.scrollTop = chat.scrollHeight;
+    });
+    const { text } = await actions.observe();
+    expect(text).toContain("Сообщение 150:");
+    expect(text).not.toContain("Сообщение 1:");
   });
 
   it("ждёт окончания анимации: гаснущий оверлей не попадает в наблюдение", async () => {

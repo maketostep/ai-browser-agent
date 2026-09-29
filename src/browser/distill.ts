@@ -13,8 +13,13 @@
 export type DistillResult = {
   /** Построчно: `[e3] searchbox "Поиск" [value="хот-дог"]` */
   elements: string;
-  /** Видимый текст страницы, обрезанный до лимита */
+  /** Видимый текст страницы: окно до лимита вокруг того, что сейчас на экране */
   text: string;
+  /** Сколько символов текста осталось выше и ниже окна */
+  textAbove: number;
+  textBelow: number;
+  /** Позиция начала экрана внутри text: вокруг неё режут и дальше */
+  textAnchor: number;
   /** Сколько интерактивных элементов размечено */
   count: number;
 };
@@ -226,9 +231,49 @@ export function distillPage(opts: DistillOptions): DistillResult {
 
   const rawText = (document.body?.innerText ?? "").replace(INVISIBLE, "").replace(/\n{3,}/g, "\n\n").trim();
 
+  /**
+   * Где в тексте начинается экран. Чат или лента, прокрученные вниз, держат
+   * свежее внизу: резать с начала страницы значит показать агенту старое.
+   * Ищем первый видимый на экране текстовый узел и его фрагмент в innerText.
+   */
+  // Шапку и плавающие панели видно на любом экране, по ним позицию не определить.
+  const inPinnedLayer = (el: Element | null): boolean => {
+    for (let node = el; node; node = node.parentElement) {
+      const pos = window.getComputedStyle(node).position;
+      if (pos === "fixed" || pos === "sticky") return true;
+    }
+    return false;
+  };
+
+  // Прокручиваться может не окно, а контейнер внутри страницы (чат hh.ru).
+  const viewportOffset = (): number => {
+    if (!document.body) return 0;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const snippet = (node.textContent ?? "").replace(INVISIBLE, "").trim().slice(0, 30);
+      if (snippet.length < 3) continue;
+      range.selectNodeContents(node);
+      const r = range.getBoundingClientRect();
+      if (r.width === 0 || r.bottom <= 0 || r.top >= window.innerHeight) continue;
+      if (inPinnedLayer(node.parentElement)) continue;
+      const at = rawText.indexOf(snippet);
+      return at === -1 ? 0 : at;
+    }
+    return 0;
+  };
+
+  // Немного контекста выше экрана, остальное окно - экран и ниже.
+  const offset = viewportOffset();
+  const start = Math.max(0, Math.min(offset - Math.floor(maxText / 10), rawText.length - maxText));
+  const text = rawText.slice(start, start + maxText);
+
   return {
     elements: shown.map((e) => e.line).join("\n"),
-    text: rawText.slice(0, maxText),
+    text,
+    textAbove: start,
+    textBelow: rawText.length - start - text.length,
+    textAnchor: offset - start,
     count: shown.length,
   };
 }
