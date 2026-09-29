@@ -5,6 +5,9 @@ import * as ui from "../ui/render.js";
 const PROFILE_DIR = ".profile";
 /** Дольше этого запрос считаем фоновым (метрика, long-polling) и не ждём. */
 const REQUEST_WAIT_MS = 2000;
+/** Обычный Chrome отдаёт false; true выдаёт автоматизацию антиботам. */
+export const HIDE_WEBDRIVER =
+  "Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });";
 
 export type SessionOptions = {
   /** Только для тестов. Продукт по требованию ТЗ всегда показывает браузер. */
@@ -40,12 +43,20 @@ export class BrowserSession {
     this.ctx = await chromium.launchPersistentContext(this.options.profileDir ?? PROFILE_DIR, {
       channel: "chrome",
       headless,
+      // Playwright по умолчанию добавляет --no-sandbox, и Chrome показывает баннер
+      // о неподдерживаемом флаге. Песочница работает на Windows и macOS.
+      chromiumSandbox: true,
       // Фиксированный viewport в видимом окне рисует страницу в углу 1280x900, а
       // остаток окна остаётся белым - так выглядело развёрнутое окно на записи видео.
       // null отдаёт странице реальный размер окна. Тестам нужна стабильная геометрия.
       viewport: headless ? { width: 1280, height: 900 } : null,
-      args: ["--disable-blink-features=AutomationControlled", "--no-default-browser-check", "--start-maximized"],
+      // Без --enable-automation нет полоски «Браузером управляет автоматизированное ПО».
+      ignoreDefaultArgs: ["--enable-automation"],
+      args: ["--no-default-browser-check", "--start-maximized"],
     });
+    // --disable-blink-features=AutomationControlled Chrome помечает баннером
+    // о неподдерживаемом флаге, поэтому navigator.webdriver прячем скриптом.
+    await this.ctx.addInitScript(HIDE_WEBDRIVER);
 
     this.contextClosed = false;
     this.inflight.clear();

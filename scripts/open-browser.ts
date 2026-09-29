@@ -9,6 +9,7 @@
  *   npx tsx scripts/open-browser.ts [url]
  */
 import { chromium } from "playwright";
+import { HIDE_WEBDRIVER } from "../src/browser/session.js";
 
 const url = process.argv[2] ?? "https://lavka.yandex.ru";
 
@@ -16,8 +17,11 @@ const ctx = await chromium.launchPersistentContext(".profile", {
   channel: "chrome",
   headless: false,
   viewport: { width: 1280, height: 900 },
-  args: ["--disable-blink-features=AutomationControlled", "--no-default-browser-check"],
+  chromiumSandbox: true,
+  ignoreDefaultArgs: ["--enable-automation"],
+  args: ["--no-default-browser-check"],
 });
+await ctx.addInitScript(HIDE_WEBDRIVER);
 
 const page = ctx.pages()[0] ?? (await ctx.newPage());
 await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => {});
