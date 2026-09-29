@@ -157,6 +157,20 @@ export function distillPage(opts: DistillOptions): DistillResult {
     return state;
   };
 
+  /**
+   * Что показать агенту вместо элемента. Кастомные радио и чекбоксы прячут input
+   * целиком и рисуют кружок CSS: видна только подпись. Клик по label переключает
+   * контрол, поэтому реф получает label, а состояние берётся у самого input.
+   */
+  const visibleTarget = (el: Element, role: string): Element | null => {
+    if (isVisible(el)) return el;
+    if (role !== "radio" && role !== "checkbox") return null;
+    const label = (el as HTMLInputElement).labels?.[0];
+    if (!label || !isVisible(label)) return null;
+    seen.add(label);
+    return label;
+  };
+
   const walk = (root: Document | ShadowRoot): void => {
     const all = root.querySelectorAll("*");
     for (const el of Array.from(all)) {
@@ -169,19 +183,20 @@ export function distillPage(opts: DistillOptions): DistillResult {
       if (!isInteractive(el)) continue;
       const role = roleOf(el);
       if (!role) continue;
-      if (!isVisible(el)) continue;
+      const target = visibleTarget(el, role);
+      if (!target) continue;
 
       n += 1;
       const ref = (prefix ? prefix + ":" : "") + "e" + n;
-      el.setAttribute("data-agent-ref", ref);
+      target.setAttribute("data-agent-ref", ref);
 
-      const name = nameOf(el);
+      const name = nameOf(target);
       const state = stateOf(el, role);
-      const blocker = obscuredBy(el);
+      const blocker = obscuredBy(target);
       if (blocker) state.push("перекрыт " + blocker);
       const suffix = state.length > 0 ? " [" + state.join(",") + "]" : "";
       const line = "[" + ref + "] " + role + " " + JSON.stringify(name) + suffix;
-      entries.push({ el, line, inView: centerInView(el), covered: blocker !== null });
+      entries.push({ el: target, line, inView: centerInView(target), covered: blocker !== null });
     }
   };
 

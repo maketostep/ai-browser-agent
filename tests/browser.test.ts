@@ -252,6 +252,27 @@ describe("браузерный слой", () => {
     expect(result.observation.elements).toMatch(/radio "Средний" \[checked\]/);
   });
 
+  it("спрятанный радио с видимой подписью показывается через label и переключается", async () => {
+    // Живой прогон на hh.ru, вопросы работодателя в отклике: input спрятан целиком,
+    // кружок нарисован CSS. Агент выкидывал такие радио как невидимые.
+    await session.page().setContent(`
+      <p>Рассматриваете ли формат работы по UTC+7</p>
+      <label><input type="radio" name="tz" value="1" style="opacity:0;position:absolute"><span>да</span></label>
+      <label><input type="radio" name="tz" value="2" style="position:absolute;width:0;height:0;margin:0"><span>нет</span></label>
+      <label><input type="checkbox" style="display:none"><span>Согласен</span></label>
+      <label style="display:none"><input type="radio" name="tz" value="3">Скрыт вместе с подписью</label>`);
+    const { elements } = await actions.observe();
+
+    expect(elements).toMatch(/radio "да"/);
+    expect(elements).toMatch(/radio "нет"/);
+    // Клик по label переключает контрол и при display:none у самого input.
+    expect(elements).toMatch(/checkbox "Согласен"/);
+    expect(elements).not.toContain("Скрыт вместе с подписью");
+
+    const result = await actions.click(refOf(elements, /radio "да"/));
+    expect(result.observation.elements).toMatch(/radio "да" \[checked\]/);
+  });
+
   it("длинный текст режет вокруг экрана: в прокрученном вниз чате видны последние сообщения", async () => {
     // Живой прогон на hh.ru: в длинном чате текст резался с начала страницы, и
     // новые вопросы работодателя внизу не попадали в наблюдение.
