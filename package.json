@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "eval": "tsx scripts/eval-agent.ts",
     "mcp": "tsx src/mcp.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
