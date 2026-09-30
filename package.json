@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "task": "tsx scripts/run-task.ts",
     "eval": "tsx scripts/eval-agent.ts",
     "mcp": "tsx src/mcp.ts",
     "test": "vitest run",

@@ -147,7 +147,7 @@ export async function runTask(
   deps: ToolDeps,
   signal?: AbortSignal,
   opts: RunOptions = {},
-): Promise<"cancelled" | void> {
+): Promise<"cancelled" | "finished" | void> {
   const env = limitsFromEnv();
   const limits = { maxSteps: opts.maxSteps ?? env.maxSteps, tokenBudget: opts.tokenBudget ?? env.tokenBudget };
   const totals: Totals = { steps: 0, input: 0, output: 0, cacheRead: 0 };
@@ -167,7 +167,7 @@ async function runLoop(
   limits: { maxSteps: number; tokenBudget: number },
   totals: Totals,
   onStep: RunOptions["onStep"],
-): Promise<"cancelled" | void> {
+): Promise<"cancelled" | "finished" | void> {
   if (signal?.aborted) return cancelled();
   // Гейт должен знать задачу целиком: без неё безобидная кнопка неотличима от шага
   // к разрушению. И запреты одной задачи не должны переноситься в следующую.
@@ -322,7 +322,7 @@ async function runLoop(
 
     if (finished !== undefined) {
       ui.banner(["\x1b[1m✅ Задача завершена\x1b[0m", "", ...finished.split("\n")]);
-      return;
+      return "finished";
     }
   }
 

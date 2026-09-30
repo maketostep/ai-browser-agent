@@ -5,7 +5,9 @@
  * человека, а молча подтверждать необратимые действия нельзя. Для настоящей работы
  * есть REPL (npm run dev), где отвечает человек.
  *
- *   npx tsx scripts/run-task.ts "открой example.com и расскажи, что там"
+ *   npm run task -- "открой example.com и расскажи, что там"
+ *
+ * Код выхода 0 только если агент дошёл до finish: скрипту и CI этого достаточно.
  */
 import { BrowserSession } from "../src/browser/session.js";
 import { Actions } from "../src/browser/actions.js";
@@ -15,7 +17,11 @@ import { provider } from "../src/agent/provider.js";
 import type { AskHuman } from "../src/types.js";
 import * as ui from "../src/ui/render.js";
 
-process.loadEnvFile(".env");
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // Файла нет - ключ приходит из окружения, provider() ниже это проверит.
+}
 
 const args = process.argv.slice(2);
 // --approve: заранее согласиться на высокорисковые действия. Только для
@@ -47,8 +53,9 @@ const askHuman: AskHuman = async (question) => {
 const session = new BrowserSession(askHuman);
 await session.start("about:blank");
 
+let outcome;
 try {
-  await runTask(task, {
+  outcome = await runTask(task, {
     actions: new Actions(session),
     gate: new SecurityGate(askHuman),
     askHuman,
@@ -56,3 +63,4 @@ try {
 } finally {
   await session.close();
 }
+process.exitCode = outcome === "finished" ? 0 : 1;
