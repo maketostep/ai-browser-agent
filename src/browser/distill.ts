@@ -244,7 +244,23 @@ export function distillPage(opts: DistillOptions): DistillResult {
   walk(document);
   const shown = collapseUnderOverlay(entries);
 
-  const rawText = (document.body?.innerText ?? "").replace(INVISIBLE, "").replace(/\n{3,}/g, "\n\n").trim();
+  // Карточка товара говорит одно и то же заголовком, alt и подписью: строка,
+  // уже вошедшая в одну из недавних, агенту ничего не добавляет.
+  const dropRepeats = (raw: string): string => {
+    const kept: string[] = [];
+    const recent: string[] = [];
+    for (const line of raw.split("\n")) {
+      const t = line.trim();
+      if (t.length >= 3 && recent.some((r) => r.includes(t))) continue;
+      kept.push(line);
+      if (t) recent.push(t);
+      if (recent.length > 4) recent.shift();
+    }
+    return kept.join("\n");
+  };
+  const rawText = dropRepeats((document.body?.innerText ?? "").replace(INVISIBLE, ""))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
   /**
    * Где в тексте начинается экран. Чат или лента, прокрученные вниз, держат
@@ -273,7 +289,8 @@ export function distillPage(opts: DistillOptions): DistillResult {
       if (r.width === 0 || r.bottom <= 0 || r.top >= window.innerHeight) continue;
       if (inPinnedLayer(node.parentElement)) continue;
       const at = rawText.indexOf(snippet);
-      return at === -1 ? 0 : at;
+      // Узел мог выпасть как повтор: берём следующий видимый.
+      if (at !== -1) return at;
     }
     return 0;
   };

@@ -353,6 +353,25 @@ describe("браузерный слой", () => {
     expect(result.observation.elements).toContain("Результат поиска");
   });
 
+  it("не повторяет в тексте то, что карточка уже сказала строкой выше", async () => {
+    // Живой прогон на Лавке: название товара шло три раза подряд (заголовок, alt,
+    // подпись без веса), цена - полной фразой и ещё двумя обрывками из неё.
+    await session.page().setContent(`
+      <div><p>Бургер классический с соусом BBQ 180 г</p><p>Бургер классический с соусом BBQ 180 г</p>
+        <p>Бургер классический с соусом BBQ</p><p>339 ₽ вместо обычной цены 485 ₽</p><p>339 ₽</p><p>485 ₽</p></div>
+      <div><p>Картофель фри Из лавки 400 г</p><p>153 ₽ вместо обычной цены 219 ₽</p><p>153 ₽</p></div>
+      <p>Итого</p><p>К оплате</p><p>492 ₽</p><p>1</p><p>1</p>`);
+    const { text } = await actions.observe();
+    const lines = text.split("\n").filter(Boolean);
+
+    expect(lines.filter((l) => l.includes("Бургер классический")).length).toBe(1);
+    expect(lines).toContain("339 ₽ вместо обычной цены 485 ₽");
+    expect(lines).not.toContain("339 ₽");
+    // Разные товары и итог не склеиваются.
+    expect(lines).toContain("Картофель фри Из лавки 400 г");
+    expect(lines).toContain("492 ₽");
+  });
+
   it("вырезает мягкие переносы и невидимые символы из имён и текста", async () => {
     await session.page().setContent(`<button>Хот&shy;сте&shy;ры&#8203; 250 г</button><p>Сосис&shy;ка в тесте</p>`);
     const observation = await actions.observe();
