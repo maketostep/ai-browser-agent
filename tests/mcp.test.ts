@@ -5,6 +5,7 @@ import { ElicitRequestSchema, type CallToolResult } from "@modelcontextprotocol/
 import { BrowserSession } from "../src/browser/session.js";
 import { Actions } from "../src/browser/actions.js";
 import { SecurityGate } from "../src/agent/security.js";
+import { LOOP_STOP_AT, LOOP_WARN_AT } from "../src/agent/loop-guard.js";
 import { createMcpServer, elicitingAsk, floorOnlyClassifier, registerTools } from "../src/mcp-server.js";
 
 const FIXTURE = `<!doctype html><html><body>
@@ -100,5 +101,23 @@ describe("MCP-вход", () => {
     const { result, status } = await clickDelete();
     expect(result).toContain("declined");
     expect(status).toBe("исходное");
+  });
+
+  it("зациклившегося клиента предупреждает, а потом останавливает", async () => {
+    answer = true;
+    await session.page().setContent(FIXTURE);
+    const server = createMcpServer();
+    registerTools(server, { actions, gate: new SecurityGate(async () => "n", floorOnlyClassifier), askHuman: async () => "" });
+    const client = await connect(server);
+
+    const replies: string[] = [];
+    for (let i = 0; i < LOOP_STOP_AT; i++) {
+      replies.push(text(await client.callTool({ name: "observe", arguments: {} })));
+    }
+    await client.close();
+
+    expect(replies[LOOP_WARN_AT - 2]).not.toContain("ХАРНЕСС");
+    expect(replies[LOOP_WARN_AT - 1]).toContain("[ХАРНЕСС]");
+    expect(replies[LOOP_STOP_AT - 1]).toContain("оно не выполнено");
   });
 });

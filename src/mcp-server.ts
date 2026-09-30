@@ -6,6 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { TOOLS, dispatch, type Dispatched, type ToolDeps } from "./agent/tools.js";
 import type { Classifier } from "./agent/security.js";
+import { LoopGuard, LOOP_STOP_AT } from "./agent/loop-guard.js";
 import type { AskHuman } from "./types.js";
 
 /**
@@ -118,6 +119,8 @@ export function createMcpServer(): Server {
 }
 
 export function registerTools(server: Server, deps: ToolDeps): void {
+  // Цикл здесь ведёт клиент, и остановить его некому, кроме самого сервера.
+  const guard = new LoopGuard();
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: MCP_TOOLS.map((tool) => ({
       name: tool.name,
@@ -131,8 +134,27 @@ export function registerTools(server: Server, deps: ToolDeps): void {
     if (EXCLUDED.has(name)) {
       return { content: [{ type: "text", text: `Инструмента ${name} в MCP-режиме нет.` }], isError: true };
     }
+    const loop = guard.record(name, input);
+    if (loop.level === "stop") {
+      return {
+        content: [{
+          type: "text",
+          text: `ХАРНЕСС: действие ${loop.signature} повторено ${loop.repeats} раз без продвижения, оно не выполнено. ` +
+            `Остановись и расскажи человеку, на чём застрял, или выбери другой путь.`,
+        }],
+        isError: true,
+      };
+    }
     try {
-      return toMcp(await dispatch(name, input, deps));
+      const result = toMcp(await dispatch(name, input, deps));
+      if (loop.level === "warn") {
+        result.content.push({
+          type: "text",
+          text: `[ХАРНЕСС] Действие ${loop.signature} повторено ${loop.repeats} раза, и ничего не изменилось. ` +
+            `Смени подход: другой элемент, другой путь, screenshot. Ещё ${LOOP_STOP_AT - loop.repeats} повтора, и сервер откажет.`,
+        });
+      }
+      return result;
     } catch (err) {
       // Ошибка браузера - информация для модели, а не падение сервера.
       const message = err instanceof Error ? err.message : String(err);

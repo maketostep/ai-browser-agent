@@ -5,6 +5,7 @@ import { provider } from "./provider.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { TOOLS, dispatch, type ToolDeps } from "./tools.js";
 import { formatObservation, pruneHistory } from "./context.js";
+import { LoopGuard, LOOP_STOP_AT } from "./loop-guard.js";
 import * as ui from "../ui/render.js";
 
 /** Страховка от зацикливания: без finish агент всё равно остановится и отчитается. */
@@ -12,17 +13,8 @@ const DEFAULT_MAX_STEPS = 40;
 /** После стольких подряд неудач по одному рефу агента принудительно разворачивают. */
 const MAX_REF_FAILURES = 3;
 
-/**
- * Обнаружение цикла по повторам одного и того же действия.
- *
- * Счётчика неудач мало. Живой прогон по почте дал восемь шагов подряд: клик по письму
- * открывал постороннюю вкладку, агент возвращался и кликал снова. Каждый клик формально
- * УСПЕШЕН, поэтому счётчик неудач сбрасывался, и цикл крутился бы до исчерпания лимита
- * шагов. Ловить надо бесполезный успех, а не только провал.
- */
-export const LOOP_WINDOW = 6;
-export const LOOP_WARN_AT = 3;
-export const LOOP_STOP_AT = 5;
+// Детектор цикла живёт в loop-guard.ts, общий с MCP-режимом. Реэкспорт держит старые импорты.
+export { actionSignature, LOOP_WINDOW, LOOP_WARN_AT, LOOP_STOP_AT } from "./loop-guard.js";
 
 export type StepUsage = { step: number; input: number; output: number; cacheRead: number };
 
@@ -52,16 +44,6 @@ export function limitsFromEnv(env: NodeJS.ProcessEnv = process.env): { maxSteps:
 /** Кеш-чтение не считаем: оно в разы дешевле, а бюджет нужен, чтобы ограничить счёт. */
 export function overBudget(spent: Pick<Totals, "input" | "output">, budget: number): boolean {
   return budget > 0 && spent.input + spent.output >= budget;
-}
-
-/** Ключ действия по сути, без формулировок: intent агент меняет, а делает то же самое. */
-export function actionSignature(name: string, input: Record<string, unknown>): string {
-  const parts = [name];
-  for (const field of ["ref", "url", "index", "direction", "value"]) {
-    const value = input[field];
-    if (value !== undefined) parts.push(`${field}=${String(value)}`);
-  }
-  return parts.join("|");
 }
 
 /** Уровень 3 управления контекстом. Выключается сам, если бета недоступна аккаунту. */
@@ -207,7 +189,7 @@ async function runLoop(
   });
 
   const refFailures = new Map<string, number>();
-  const recentActions: string[] = [];
+  const guard = new LoopGuard();
 
   for (let step = 1; step <= limits.maxSteps; step++) {
     if (signal?.aborted) return cancelled();
@@ -293,12 +275,9 @@ async function runLoop(
       ui.toolResult(!outcome.isError, preview);
 
       // Повтор одного и того же действия, успешного или нет.
-      const signature = actionSignature(use.name, (use.input ?? {}) as Record<string, unknown>);
-      recentActions.push(signature);
-      if (recentActions.length > LOOP_WINDOW) recentActions.shift();
-      const repeats = recentActions.filter((s) => s === signature).length;
+      const { signature, repeats, level } = guard.record(use.name, use.input);
 
-      if (repeats >= LOOP_STOP_AT) {
+      if (level === "stop") {
         ui.banner([
           "\x1b[1m⛔ Задача остановлена харнессом\x1b[0m",
           "",
@@ -308,7 +287,7 @@ async function runLoop(
         return;
       }
 
-      if (repeats >= LOOP_WARN_AT && typeof outcome.content === "string") {
+      if (level === "warn" && typeof outcome.content === "string") {
         outcome.content +=
           `\n\n[ХАРНЕСС] Ты повторил действие ${signature} уже ${repeats} раза, и ничего не ` +
           `изменилось. Это цикл, повторять его снова бессмысленно. Смени подход: другой ` +
