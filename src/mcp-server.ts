@@ -16,7 +16,7 @@ import type { AskHuman } from "./types.js";
  * Без API-ключа здесь недоступно всё, что само зовёт модель: query_page и классификатор
  * риска. ask_user и finish не нужны - клиент сам разговаривает с человеком.
  */
-const EXCLUDED = new Set(["query_page", "ask_user", "finish"]);
+const EXCLUDED = new Set(["query_page", "ask_user", "finish", "remember"]);
 
 export const MCP_TOOLS = TOOLS.filter((tool) => !EXCLUDED.has(tool.name));
 

@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT } from "./prompt.js";
 import { TOOLS, dispatch, type ToolDeps } from "./tools.js";
 import { formatObservation, pruneHistory } from "./context.js";
 import { LoopGuard, LOOP_STOP_AT } from "./loop-guard.js";
+import { formatNotes, loadNotes } from "./memory.js";
 import * as ui from "../ui/render.js";
 
 /** Страховка от зацикливания: без finish агент всё равно остановится и отчитается. */
@@ -180,10 +181,12 @@ async function runLoop(
   // места означало бы её выбросить.
   await deps.actions.ensureBrowser();
   const bootstrap = await deps.actions.observe();
+  const notes = formatNotes(loadNotes(deps.notesPath));
   messages.push({
     role: "user",
     content:
       `Задача: ${task}\n\n` +
+      (notes ? `${notes}\n\n` : "") +
       `Сейчас в браузере открыто вот это. Действуй.\n\n` +
       formatObservation(bootstrap),
   });
