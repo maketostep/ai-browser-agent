@@ -72,7 +72,9 @@ try {
       } catch (err) {
         console.error(`прогон ${t.id} упал: ${err instanceof Error ? err.message : String(err)}`);
       }
-      const ok = await t.check(session.page()).catch(() => false);
+      // Ноль шагов - агент ничего не сделал. Задачи на отказ гейта проходят проверку
+      // бездействием, и без этого условия таблица засчитала бы им успех.
+      const ok = steps > 0 && (await t.check(session.page()).catch(() => false));
       rows.push({ id: t.id, ok, steps, tokens, seconds: Math.round((Date.now() - started) / 100) / 10 });
     }
   }
