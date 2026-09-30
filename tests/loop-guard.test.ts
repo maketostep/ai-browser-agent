@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { actionSignature, LOOP_WINDOW, LOOP_WARN_AT, LOOP_STOP_AT, modelForAttempt, runTask } from "../src/agent/loop.js";
+import { actionSignature, LOOP_WINDOW, LOOP_WARN_AT, LOOP_STOP_AT, limitsFromEnv, modelForAttempt, overBudget, runTask } from "../src/agent/loop.js";
 import type { ToolDeps } from "../src/agent/tools.js";
 
 /**
@@ -99,5 +99,25 @@ describe("отмена задачи", () => {
 
     expect(await runTask("задача", deps, controller.signal)).toBe("cancelled");
     expect(observed).toBe(0);
+  });
+});
+
+describe("лимиты задачи", () => {
+  it("читает потолки из окружения, мусор заменяет значениями по умолчанию", () => {
+    expect(limitsFromEnv({})).toEqual({ maxSteps: 40, tokenBudget: 0 });
+    expect(limitsFromEnv({ AGENT_MAX_STEPS: "80", AGENT_TOKEN_BUDGET: "200000" })).toEqual({
+      maxSteps: 80,
+      tokenBudget: 200000,
+    });
+    expect(limitsFromEnv({ AGENT_MAX_STEPS: "abc", AGENT_TOKEN_BUDGET: "-5" })).toEqual({
+      maxSteps: 40,
+      tokenBudget: 0,
+    });
+  });
+
+  it("бюджет считает in+out, кеш не считает, ноль отключает потолок", () => {
+    expect(overBudget({ input: 90, output: 9 }, 100)).toBe(false);
+    expect(overBudget({ input: 90, output: 10 }, 100)).toBe(true);
+    expect(overBudget({ input: 1e9, output: 1e9 }, 0)).toBe(false);
   });
 });

@@ -8,7 +8,7 @@ import { formatObservation, pruneHistory } from "./context.js";
 import * as ui from "../ui/render.js";
 
 /** Страховка от зацикливания: без finish агент всё равно остановится и отчитается. */
-const MAX_STEPS = 40;
+const DEFAULT_MAX_STEPS = 40;
 /** После стольких подряд неудач по одному рефу агента принудительно разворачивают. */
 const MAX_REF_FAILURES = 3;
 
@@ -23,6 +23,36 @@ const MAX_REF_FAILURES = 3;
 export const LOOP_WINDOW = 6;
 export const LOOP_WARN_AT = 3;
 export const LOOP_STOP_AT = 5;
+
+export type StepUsage = { step: number; input: number; output: number; cacheRead: number };
+
+export type RunOptions = {
+  /** Потолок шагов. По умолчанию AGENT_MAX_STEPS или 40. */
+  maxSteps?: number;
+  /** Потолок токенов in+out за задачу, 0 - без потолка. По умолчанию AGENT_TOKEN_BUDGET. */
+  tokenBudget?: number;
+  /** Вызывается после каждого ответа модели: так eval считает цену прогона. */
+  onStep?: (usage: StepUsage) => void;
+};
+
+type Totals = { steps: number; input: number; output: number; cacheRead: number };
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+export function limitsFromEnv(env: NodeJS.ProcessEnv = process.env): { maxSteps: number; tokenBudget: number } {
+  return {
+    maxSteps: positiveInt(env["AGENT_MAX_STEPS"], DEFAULT_MAX_STEPS),
+    tokenBudget: positiveInt(env["AGENT_TOKEN_BUDGET"], 0),
+  };
+}
+
+/** Кеш-чтение не считаем: оно в разы дешевле, а бюджет нужен, чтобы ограничить счёт. */
+export function overBudget(spent: Pick<Totals, "input" | "output">, budget: number): boolean {
+  return budget > 0 && spent.input + spent.output >= budget;
+}
 
 /** Ключ действия по сути, без формулировок: intent агент меняет, а делает то же самое. */
 export function actionSignature(name: string, input: Record<string, unknown>): string {
@@ -130,7 +160,32 @@ const cancelled = (): "cancelled" => {
  * прерывает запрос к модели на лету и вопрос гейта. Уже начатое действие в браузере
  * доигрывается: обрывать клик на середине опаснее, чем дождаться его.
  */
-export async function runTask(task: string, deps: ToolDeps, signal?: AbortSignal): Promise<"cancelled" | void> {
+export async function runTask(
+  task: string,
+  deps: ToolDeps,
+  signal?: AbortSignal,
+  opts: RunOptions = {},
+): Promise<"cancelled" | void> {
+  const env = limitsFromEnv();
+  const limits = { maxSteps: opts.maxSteps ?? env.maxSteps, tokenBudget: opts.tokenBudget ?? env.tokenBudget };
+  const totals: Totals = { steps: 0, input: 0, output: 0, cacheRead: 0 };
+  try {
+    return await runLoop(task, deps, signal, limits, totals, opts.onStep);
+  } finally {
+    if (totals.steps > 0) {
+      ui.info(`итого: шагов ${totals.steps}, токены in=${totals.input} out=${totals.output} cache_read=${totals.cacheRead}`);
+    }
+  }
+}
+
+async function runLoop(
+  task: string,
+  deps: ToolDeps,
+  signal: AbortSignal | undefined,
+  limits: { maxSteps: number; tokenBudget: number },
+  totals: Totals,
+  onStep: RunOptions["onStep"],
+): Promise<"cancelled" | void> {
   if (signal?.aborted) return cancelled();
   // Гейт должен знать задачу целиком: без неё безобидная кнопка неотличима от шага
   // к разрушению. И запреты одной задачи не должны переноситься в следующую.
@@ -154,8 +209,12 @@ export async function runTask(task: string, deps: ToolDeps, signal?: AbortSignal
   const refFailures = new Map<string, number>();
   const recentActions: string[] = [];
 
-  for (let step = 1; step <= MAX_STEPS; step++) {
+  for (let step = 1; step <= limits.maxSteps; step++) {
     if (signal?.aborted) return cancelled();
+    if (overBudget(totals, limits.tokenBudget)) {
+      ui.warn(`Бюджет ${limits.tokenBudget} токенов исчерпан. Задача остановлена принудительно.`);
+      return;
+    }
     const pruned = pruneHistory(messages);
     if (pruned > 0) ui.info(`прунинг контекста: схлопнуто наблюдений ${pruned}`);
 
@@ -168,12 +227,18 @@ export async function runTask(task: string, deps: ToolDeps, signal?: AbortSignal
       return;
     }
 
-    ui.usage({
+    const usage: StepUsage = {
       step,
       input: response.usage.input_tokens,
       output: response.usage.output_tokens,
       cacheRead: response.usage.cache_read_input_tokens ?? 0,
-    });
+    };
+    ui.usage(usage);
+    totals.steps = step;
+    totals.input += usage.input;
+    totals.output += usage.output;
+    totals.cacheRead += usage.cacheRead;
+    onStep?.(usage);
 
     for (const block of response.content) {
       if (block.type === "thinking") ui.thinking(block.thinking);
@@ -282,5 +347,5 @@ export async function runTask(task: string, deps: ToolDeps, signal?: AbortSignal
     }
   }
 
-  ui.warn(`Достигнут лимит в ${MAX_STEPS} шагов. Задача остановлена принудительно.`);
+  ui.warn(`Достигнут лимит в ${limits.maxSteps} шагов. Задача остановлена принудительно.`);
 }
