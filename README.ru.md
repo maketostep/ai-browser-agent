@@ -6,7 +6,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6.svg?logo=typescript&logoColor=white">
   <img alt="Playwright" src="https://img.shields.io/badge/Playwright-1.63-2EAD33.svg?logo=playwright&logoColor=white">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
-  <img alt="Tests: 81 passing" src="https://img.shields.io/badge/tests-81%20passing-brightgreen.svg">
+  <img alt="Tests: 99 passing" src="https://img.shields.io/badge/tests-99%20passing-brightgreen.svg">
   <a href="https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing"><img alt="Demo video" src="https://img.shields.io/badge/demo-video-red.svg?logo=googledrive&logoColor=white"></a>
 </p>
 
@@ -277,7 +277,7 @@ grep -nEi "lavka|лавк|yandex|яндекс|hh\.ru|data-qa|корзин" \
 ## Тесты
 
 ```bash
-npm test         # 81 тест
+npm test         # 99 тестов
 npm run typecheck
 ```
 
@@ -290,6 +290,45 @@ layout (`getBoundingClientRect`, `getComputedStyle`), а jsdom его не сч�
 ```bash
 npx tsx scripts/smoke-observe.ts https://lavka.yandex.ru
 ```
+
+## Замер агента
+
+Eval безопасности проверяет гейт. `npm run eval` проверяет самого агента: семь локальных
+страниц в `evals/tasks.ts` (баннер поверх страницы, спрятанное радио, пагинация, поиск,
+два отказа гейта, инъекция в тексте). Проверка смотрит на итоговое состояние страницы, а не
+на слова модели.
+
+```bash
+npm run eval                  # каждая задача по разу, headless Chrome
+npm run eval -- --repeat 3    # по три прогона: модель недетерминирована
+npm run eval -- pagination    # одна задача по id
+```
+
+Таблица показывает успех, шаги, токены и секунды по каждому прогону. Эталонное решение
+каждой страницы гоняет `npm test`, поэтому провал на странице значит провал агента, а не
+фикстуры. Eval тратит токены и требует рабочего классификатора риска: если модель
+провайдера не вызывает инструмент `report_risk`, гейт отклоняет любое действие. Тогда
+задайте в `OPENROUTER_SUB_MODEL` модель с принудительным вызовом инструментов.
+
+## Разовый запуск и лимиты
+
+`npm run task -- "открой example.com и расскажи, что там"` выполняет одну задачу без
+человека. Гейт отклоняет всё высокорисковое. Код выхода 0 только если агент дошёл до
+`finish`.
+
+| Переменная | Что делает |
+|---|---|
+| `AGENT_MAX_STEPS` | лимит шагов на задачу, по умолчанию 40 |
+| `AGENT_TOKEN_BUDGET` | остановка после стольких токенов in+out, по умолчанию без лимита |
+
+Каждая задача заканчивается строкой итогов: шаги и токены.
+
+## Память
+
+Агент сохраняет устойчивые факты инструментом `remember` в `.profile/notes.json`: не больше
+30 заметок по 300 символов, старые вытесняются. Следующая задача получает их в первом
+сообщении, помеченными как данные, которые не заменяют подтверждения. Файл обычный JSON,
+правьте его руками. В MCP-режиме `remember` нет: у Claude Code своя память.
 
 ## Журнал решений
 
@@ -397,7 +436,7 @@ thinking-блоки к неизменной истории, а прунинг з
 - Капчу агент не решает. Вход по ТЗ выполняет пользователь, при капче агент зовёт человека.
 - Один REPL, одна задача за раз, без очереди.
 - Только Chrome.
-- Память между сессиями агент не ведёт.
-- Лимит 40 шагов на задачу страхует от зацикливания.
+- Память это короткий список фактов, а не архив прошлых запусков.
+- Лимит 40 шагов на задачу страхует от зацикливания; меняется через `AGENT_MAX_STEPS`.
 - Ctrl+C не обрывает клик на середине: агент доигрывает начатое действие и только потом
   останавливается.

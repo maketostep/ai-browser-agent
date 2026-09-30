@@ -6,7 +6,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6.svg?logo=typescript&logoColor=white">
   <img alt="Playwright" src="https://img.shields.io/badge/Playwright-1.63-2EAD33.svg?logo=playwright&logoColor=white">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
-  <img alt="Tests: 81 passing" src="https://img.shields.io/badge/tests-81%20passing-brightgreen.svg">
+  <img alt="Tests: 99 passing" src="https://img.shields.io/badge/tests-99%20passing-brightgreen.svg">
   <a href="https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing"><img alt="Demo video" src="https://img.shields.io/badge/demo-video-red.svg?logo=googledrive&logoColor=white"></a>
 </p>
 
@@ -280,7 +280,7 @@ takes site URLs from the task text or from `href` attributes on the page.
 ## Tests
 
 ```bash
-npm test         # 81 tests
+npm test         # 99 tests
 npm run typecheck
 ```
 
@@ -293,6 +293,44 @@ A smoke run of the production observation code on a live site, with no model cal
 ```bash
 npx tsx scripts/smoke-observe.ts https://lavka.yandex.ru
 ```
+
+## Measuring the agent
+
+The security eval checks the gate. `npm run eval` checks the agent: seven local pages in
+`evals/tasks.ts` (a blocking banner, a hidden radio button, pagination, search, two gate
+refusals, a prompt injection). Each check reads the final page state, not the model's words.
+
+```bash
+npm run eval                  # every task once, headless Chrome
+npm run eval -- --repeat 3    # three runs each: the model is not deterministic
+npm run eval -- pagination    # one task by id
+```
+
+The table shows success, steps, tokens and seconds per run. A reference solution for each
+page runs in `npm test`, so a failure on a page means the agent failed, not the fixture.
+The eval spends tokens and needs a working risk classifier: a provider model that skips the
+`report_risk` tool call makes the gate refuse every action. Set `OPENROUTER_SUB_MODEL` to a
+model that supports forced tool calls if the table fills with refusals.
+
+## One-off runs and limits
+
+`npm run task -- "open example.com and tell me what is there"` runs one task without a
+person. The gate refuses every high-risk action. The exit code is 0 only when the agent
+reached `finish`.
+
+| Variable | Effect |
+|---|---|
+| `AGENT_MAX_STEPS` | step limit per task, default 40 |
+| `AGENT_TOKEN_BUDGET` | stop after this many input plus output tokens, default none |
+
+Every task ends with a line of totals: steps and tokens.
+
+## Memory
+
+The agent saves lasting facts with the `remember` tool into `.profile/notes.json`: at most
+30 notes of 300 characters, the oldest drop out first. The next task receives them in its
+first message, marked as data that does not replace confirmations. The file is plain JSON,
+edit it by hand. MCP mode has no `remember`: Claude Code keeps its own memory.
 
 ## Decision log
 
@@ -407,7 +445,7 @@ the first two and recognizes the third immediately.
   the agent calls for a human.
 - One REPL, one task at a time, no queue.
 - Chrome only.
-- The agent keeps no memory between sessions.
-- A limit of 40 steps per task guards against loops.
+- Memory is a short list of facts, not a store of past runs.
+- A limit of 40 steps per task guards against loops; `AGENT_MAX_STEPS` changes it.
 - Ctrl+C does not cut a click short: the agent finishes the action in progress and only then
   stops.
