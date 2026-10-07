@@ -17,7 +17,7 @@ const server = createMcpServer();
 const askHuman = elicitingAsk(server, drain);
 const session = new BrowserSession(askHuman);
 const actions = new Actions(session);
-const gate = new SecurityGate(askHuman, floorOnlyClassifier);
+const gate = new SecurityGate(askHuman, floorOnlyClassifier, process.env["AGENT_AUTO_APPROVE"] === "1");
 registerTools(server, { actions, gate, askHuman });
 
 await session.start(process.env["START_URL"] ?? "about:blank");

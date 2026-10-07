@@ -32,7 +32,8 @@ async function main(): Promise<void> {
 
   const session = new BrowserSession(askHuman);
   const actions = new Actions(session);
-  const gate = new SecurityGate(askHuman);
+  const autoApprove = process.env["AGENT_AUTO_APPROVE"] === "1";
+  const gate = new SecurityGate(askHuman, undefined, autoApprove);
 
   const disabled = Object.entries(config.features)
     .filter(([, on]) => !on)
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
     "",
     `Провайдер: ${config.label}   модель: ${config.mainModel}   суб-агенты: ${config.subModel}`,
     ...(disabled.length > 0 ? [`Недоступно у провайдера: ${disabled.join(", ")}`] : []),
+    ...(autoApprove ? ["\x1b[31mAGENT_AUTO_APPROVE: гейт не спрашивает, оплата и удаление пройдут без подтверждения\x1b[0m"] : []),
     "",
     "Открываю браузер. Если нужен вход в аккаунт - залогинься вручную прямо в нём,",
     "сессия сохранится в профиле и переживёт перезапуск.",

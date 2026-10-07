@@ -61,10 +61,15 @@ export class SecurityGate {
   /** Кеш по (элемент + намерение): повторный клик по тому же не платит второй раз. */
   private readonly cache = new Map<string, RiskVerdict>();
 
-  /** classifier инъектируется, чтобы гейт можно было тестировать без сети. */
+  /**
+   * classifier инъектируется, чтобы гейт можно было тестировать без сети.
+   * autoApprove (AGENT_AUTO_APPROVE=1) снимает только вопрос человеку: оценка и лог
+   * остаются, чтобы после прогона было видно, что прошло бы через подтверждение.
+   */
   constructor(
     private readonly askHuman: AskHuman,
     private readonly classifier: Classifier = classifyRisk,
+    private readonly autoApprove = false,
   ) {}
 
   /** Сколько раз классификатор реально вызывался. Нужно тестам, чтобы проверить кеш. */
@@ -143,6 +148,10 @@ export class SecurityGate {
     }
 
     ui.securityGate(`${args.tool} -> ${args.element}\n             Намерение: ${args.intent}`, why);
+    if (this.autoApprove) {
+      ui.warn("подтверждено автоматически (AGENT_AUTO_APPROVE)");
+      return { allowed: true };
+    }
     const answer = await this.askHuman("Выполнить это действие? [y/N] ");
     const approved = answer.trim().toLowerCase() === "y";
     ui.gateDecision(approved);

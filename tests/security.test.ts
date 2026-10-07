@@ -67,6 +67,15 @@ describe("SecurityGate", () => {
     expect((await gate.check(args())).allowed).toBe(true);
   });
 
+  it("autoApprove пропускает высокий риск и пол без вопроса человеку", async () => {
+    const askHuman = vi.fn(async () => "n");
+    const gate = new SecurityGate(askHuman, async () => verdict("high"), true);
+
+    expect((await gate.check(args())).allowed).toBe(true);
+    expect((await gate.check(args({ element: 'button "Оплатить"' }))).allowed).toBe(true);
+    expect(askHuman).not.toHaveBeenCalled();
+  });
+
   it("на всё, кроме y, отвечает отказом", async () => {
     for (const answer of ["", "n", "N", "да", "yes", "Y "]) {
       const gate = new SecurityGate(async () => answer, async () => verdict("high"));

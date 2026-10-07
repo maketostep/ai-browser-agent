@@ -322,6 +322,7 @@ reached `finish`.
 |---|---|
 | `AGENT_MAX_STEPS` | step limit per task, default 40 |
 | `AGENT_TOKEN_BUDGET` | stop after this many input plus output tokens, default none |
+| `AGENT_AUTO_APPROVE` | `1` drops the gate question: the gate still classifies and logs, then allows; payments and deletions run unconfirmed |
 
 Every task ends with a line of totals: steps and tokens.
 
