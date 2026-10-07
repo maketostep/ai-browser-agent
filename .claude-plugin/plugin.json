@@ -1,12 +1,22 @@
 {
   "name": "ai-browser-agent",
   "displayName": "AI Browser Agent",
+  "version": "1.4.0",
   "description": "Видимый Chrome под управлением Claude Code: дистилляция страницы, рефы элементов, подтверждение необратимых действий",
-  "author": { "name": "maketostep", "url": "https://github.com/maketostep" },
+  "author": {
+    "name": "maketostep",
+    "url": "https://github.com/maketostep"
+  },
   "homepage": "https://github.com/maketostep/ai-browser-agent",
   "repository": "https://github.com/maketostep/ai-browser-agent",
   "license": "ISC",
-  "keywords": ["browser", "playwright", "chrome", "mcp", "automation"],
+  "keywords": [
+    "browser",
+    "playwright",
+    "chrome",
+    "mcp",
+    "automation"
+  ],
   "mcpServers": {
     "browser": {
       "command": "node",
@@ -16,7 +26,9 @@
         "${CLAUDE_PLUGIN_ROOT}/tsconfig.json",
         "${CLAUDE_PLUGIN_ROOT}/src/mcp.ts"
       ],
-      "env": { "AGENT_PROFILE_DIR": "${CLAUDE_PLUGIN_DATA}/profile" }
+      "env": {
+        "AGENT_PROFILE_DIR": "${CLAUDE_PLUGIN_DATA}/profile"
+      }
     }
   }
 }
