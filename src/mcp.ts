@@ -15,12 +15,16 @@ const drain = redirectConsole();
 
 const server = createMcpServer();
 const askHuman = elicitingAsk(server, drain);
-const session = new BrowserSession(askHuman);
+// Плагин Claude Code запускает сервер из чужого проекта: профиль кладём туда, где
+// он переживёт и смену проекта, и обновление плагина.
+const session = new BrowserSession(askHuman, {
+  profileDir: process.env["AGENT_PROFILE_DIR"],
+  startUrl: process.env["START_URL"],
+});
 const actions = new Actions(session);
 const gate = new SecurityGate(askHuman, floorOnlyClassifier, process.env["AGENT_AUTO_APPROVE"] === "1");
 registerTools(server, { actions, gate, askHuman });
 
-await session.start(process.env["START_URL"] ?? "about:blank");
 await server.connect(new StdioServerTransport());
 
 // Клиент закрыл stdin - закрываем и браузер, иначе Chrome держит профиль.

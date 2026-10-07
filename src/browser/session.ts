@@ -13,6 +13,8 @@ export type SessionOptions = {
   /** Только для тестов. Продукт по требованию ТЗ всегда показывает браузер. */
   headless?: boolean;
   profileDir?: string;
+  /** Куда открыть первую вкладку, когда браузер поднимается лениво из ensurePage(). */
+  startUrl?: string;
 };
 
 /**
@@ -31,6 +33,8 @@ export class BrowserSession {
   /** Браузер закрыт: человеком (поднимем заново) или нами через close() (не поднимаем). */
   private contextClosed = false;
   private closing = false;
+  /** Идущий запуск. Параллельные вызовы ждут его, а не открывают второй Chrome на том же профиле. */
+  private launching?: Promise<void>;
 
   constructor(
     private readonly askHuman: AskHuman,
@@ -143,7 +147,14 @@ export class BrowserSession {
    * на том же профиле, вход при этом сохраняется.
    */
   async ensurePage(): Promise<Page> {
-    if (this.contextClosed && !this.closing) {
+    // MCP-сервер не поднимает браузер на старте: иначе Chrome открывался бы в каждой
+    // сессии Claude Code, даже без единого вызова инструмента.
+    if (!this.ctx) {
+      this.launching ??= this.start(this.options.startUrl ?? "about:blank").finally(() => {
+        this.launching = undefined;
+      });
+      await this.launching;
+    } else if (this.contextClosed && !this.closing) {
       await this.start("about:blank");
       this.notes.push("Браузер был закрыт, открыл его заново на том же профиле");
     }
@@ -215,6 +226,6 @@ export class BrowserSession {
 
   async close(): Promise<void> {
     this.closing = true;
-    await this.ctx.close().catch(() => {});
+    await this.ctx?.close().catch(() => {});
   }
 }

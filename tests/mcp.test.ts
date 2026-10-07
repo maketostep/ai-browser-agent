@@ -121,3 +121,21 @@ describe("MCP-вход", () => {
     expect(replies[LOOP_STOP_AT - 1]).toContain("оно не выполнено");
   });
 });
+
+describe("ленивый запуск браузера", () => {
+  it("поднимает Chrome при первом инструменте, параллельные вызовы делят один запуск", async () => {
+    const session = new BrowserSession(async () => "n", { headless: true, profileDir: ".profile-test-lazy" });
+    try {
+      // Второй launchPersistentContext на том же профиле упал бы: профиль занят.
+      const [first, second] = await Promise.all([session.ensurePage(), session.ensurePage()]);
+      expect(first).toBe(second);
+      expect(session.pages()).toHaveLength(1);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("close() без запуска не падает", async () => {
+    await new BrowserSession(async () => "n").close();
+  });
+});
