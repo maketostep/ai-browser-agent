@@ -6,7 +6,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6.svg?logo=typescript&logoColor=white">
   <img alt="Playwright" src="https://img.shields.io/badge/Playwright-1.63-2EAD33.svg?logo=playwright&logoColor=white">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
-  <img alt="Tests: 102 passing" src="https://img.shields.io/badge/tests-102%20passing-brightgreen.svg">
+  <img alt="Tests: 111 passing" src="https://img.shields.io/badge/tests-111%20passing-brightgreen.svg">
   <a href="https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing"><img alt="Demo video" src="https://img.shields.io/badge/demo-video-red.svg?logo=googledrive&logoColor=white"></a>
 </p>
 
@@ -280,7 +280,7 @@ takes site URLs from the task text or from `href` attributes on the page.
 ## Tests
 
 ```bash
-npm test         # 102 tests
+npm test         # 111 tests
 npm run typecheck
 ```
 
