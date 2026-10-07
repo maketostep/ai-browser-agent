@@ -1,0 +1,12 @@
+{
+  "name": "maketostep",
+  "description": "Плагины maketostep для Claude Code",
+  "owner": { "name": "maketostep", "url": "https://github.com/maketostep" },
+  "plugins": [
+    {
+      "name": "ai-browser-agent",
+      "source": "./",
+      "description": "Видимый Chrome под управлением Claude Code"
+    }
+  ]
+}

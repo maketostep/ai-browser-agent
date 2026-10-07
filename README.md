@@ -6,7 +6,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6.svg?logo=typescript&logoColor=white">
   <img alt="Playwright" src="https://img.shields.io/badge/Playwright-1.63-2EAD33.svg?logo=playwright&logoColor=white">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2.svg">
-  <img alt="Tests: 111 passing" src="https://img.shields.io/badge/tests-111%20passing-brightgreen.svg">
+  <img alt="Tests: 113 passing" src="https://img.shields.io/badge/tests-113%20passing-brightgreen.svg">
   <a href="https://drive.google.com/drive/folders/1_eNxxeEn8oQtB7TbR2LPn6ehaEy67_yI?usp=sharing"><img alt="Demo video" src="https://img.shields.io/badge/demo-video-red.svg?logo=googledrive&logoColor=white"></a>
 </p>
 
@@ -22,7 +22,92 @@ any irreversible action.
 The agent knows no website in advance. The code has no selectors, paths, button names or
 scripted scenarios. The section "How to verify there are no scripted hints" shows how to check.
 
-## Getting started
+## Quick start
+
+The fastest way in is the Claude Code plugin. You need [Claude Code](https://code.claude.com),
+Node.js 20+ and Chrome. No API key and no clone: Claude Code thinks under your subscription,
+and the plugin gives it the browser.
+
+```bash
+claude plugin marketplace add maketostep/ai-browser-agent
+claude plugin install ai-browser-agent@maketostep
+```
+
+Start a new Claude Code session in any project and give it a task:
+
+```
+> Open news.ycombinator.com and list the five top stories with their points.
+```
+
+Chrome opens at the first browser tool call. Before any irreversible action (payment,
+sending, deleting) Claude Code asks you in a dialog.
+
+## Ways to connect
+
+| Way | Fits | API key | Where it works |
+|---|---|---|---|
+| [Plugin](#claude-code-plugin) | everyday use | not needed | every project in Claude Code |
+| [MCP from a clone](#mcp-from-a-clone) | working on the agent's code | not needed | Claude Code inside this repository |
+| [Standalone agent](#standalone-agent) | the full architecture: own loop, sub-agents, risk classifier | required | terminal, `npm run dev` |
+
+The first two ways run the same MCP server. They differ in where the code and the browser
+profile live. The third way runs the agent's own loop with no Claude Code involved.
+
+### Claude Code plugin
+
+Install it with the two commands from "Quick start". Inside a session the same commands start
+with `/plugin`. Claude Code installs `node_modules` from `package-lock.json` when it caches the
+plugin. The server shows up in `/mcp` as `plugin:ai-browser-agent:browser`.
+
+The browser profile lives in `~/.claude/plugins/data/ai-browser-agent-maketostep/profile`, so
+logins survive project switches and plugin updates. Need an account for a task? Log in by hand
+in the window the agent opened.
+
+| Action | Command |
+|---|---|
+| Update | `claude plugin update ai-browser-agent@maketostep` |
+| Uninstall, profile included | `claude plugin uninstall ai-browser-agent@maketostep` |
+| Uninstall, keep the profile | add `--keep-data` |
+| Try a local clone as a plugin | `claude --plugin-dir /path/to/ai-browser-agent` after `npm install` in it |
+
+### MCP from a clone
+
+```bash
+git clone https://github.com/maketostep/ai-browser-agent.git
+cd ai-browser-agent
+npm install
+claude            # .mcp.json registers the browser server
+```
+
+On first launch Claude Code asks whether to trust the `browser` server from `.mcp.json`. Then
+you type tasks directly in Claude Code. Chrome opens on `.profile/` at the first tool call, so
+a session that never touches the browser never starts it. Only one Chrome can hold the profile
+at a time, so `npm run dev` and a Claude Code session that already used the browser cannot run
+together.
+
+The project `.mcp.json` and the plugin both define a server named `browser`. `plugin.json`
+declares its own `browser` inline, and in the plugin copy that entry replaces the one from
+`.mcp.json`.
+
+### What MCP mode carries over and what it lacks
+
+Both MCP ways keep page distillation, `data-agent-ref` refs, error handling (`stale_ref`,
+intercepted clicks, new tabs, native dialogs) and the security gate. The gate's question
+reaches Claude Code as an MCP elicitation dialog. If the client does not support elicitation,
+the gate treats that as a refusal. The server passes a condensed version of the system
+prompt's page rules to the client in the `instructions` field.
+
+| Standalone agent (`npm run dev`) | MCP mode |
+|---|---|
+| Own agent loop, step limit, loop detector | Claude Code runs the loop |
+| Observation pruning and server-side context editing | Claude Code auto-compaction |
+| `query_page` sub-agent | None: it needs an API key |
+| Risk classifier and deterministic floor | Deterministic floor and post-refusal mode only |
+
+The standalone agent shows the architecture. MCP mode lets you use the same browser layer
+under a subscription.
+
+### Standalone agent
 
 ```bash
 npm install
@@ -46,40 +131,6 @@ waits for a new task. Ctrl+C while idle, or `exit`, quits the program.
 
 Closed the Chrome window? The agent reopens the browser on the same profile at its next
 action, and your login stays.
-
-## MCP mode: through Claude Code
-
-A second entry point into the same core, for running without an API key. The server exposes
-the browser tools over MCP, and Claude Code does the thinking and picks the tools under your
-subscription.
-
-```bash
-npm install
-claude            # from the project root; .mcp.json registers the browser server
-```
-
-On first launch Claude Code asks whether to trust the `browser` server from `.mcp.json`. Then
-Chrome opens on the same `.profile/`, and you type tasks directly in Claude Code. Only one
-Chrome can hold the profile at a time, so `npm run dev` and a Claude Code session with the
-`browser` server cannot run together.
-
-Page distillation, `data-agent-ref` refs, error handling (`stale_ref`, intercepted clicks,
-new tabs, native dialogs) and the security gate carry over unchanged. The gate's question
-reaches Claude Code as an MCP elicitation dialog. If the client does not support elicitation,
-the gate treats that as a refusal. The server passes a condensed version of the system
-prompt's page rules to the client in the `instructions` field.
-
-What this mode lacks:
-
-| Main mode (`npm run dev`) | MCP mode |
-|---|---|
-| Own agent loop, step limit, loop detector | Claude Code runs the loop |
-| Observation pruning and server-side context editing | Claude Code auto-compaction |
-| `query_page` sub-agent | None: it needs an API key |
-| Risk classifier and deterministic floor | Deterministic floor and post-refusal mode only |
-
-The main mode shows the agent's architecture. MCP mode lets you use the same browser layer
-under a subscription.
 
 ## Model provider
 
@@ -280,7 +331,7 @@ takes site URLs from the task text or from `href` attributes on the page.
 ## Tests
 
 ```bash
-npm test         # 111 tests
+npm test         # 113 tests
 npm run typecheck
 ```
 
