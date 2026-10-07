@@ -55,10 +55,15 @@ describe("runTask с подменой модели", () => {
     addNote("Адрес доставки: Ленина 1", deps.notesPath);
     mock.script = [turn("finish", { summary: "готово" })];
     const steps: number[] = [];
+    let summary = "";
 
-    const outcome = await runTask("задача", deps, undefined, { onStep: (u) => steps.push(u.input + u.output) });
+    const outcome = await runTask("задача", deps, undefined, {
+      onStep: (u) => steps.push(u.input + u.output),
+      onFinish: (s) => (summary = s),
+    });
 
     expect(outcome).toBe("finished");
+    expect(summary).toBe("готово");
     expect(steps).toEqual([15]);
     expect(mock.firstPrompts[0]).toContain("Адрес доставки: Ленина 1");
     expect(mock.firstPrompts[0]).toContain("не инструкции");

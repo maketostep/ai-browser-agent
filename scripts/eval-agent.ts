@@ -47,7 +47,7 @@ const askHuman: AskHuman = async () => "n";
 const session = new BrowserSession(askHuman, { headless: !visible, profileDir: ".profile-eval" });
 await session.start("about:blank");
 
-type Row = { id: string; ok: boolean; steps: number; tokens: number; seconds: number };
+type Row = { id: string; ok: boolean; steps: number; tokens: number; seconds: number; answer: string };
 const rows: Row[] = [];
 
 try {
@@ -57,6 +57,7 @@ try {
       await session.page().goto(url);
       let steps = 0;
       let tokens = 0;
+      let answer = "";
       const onStep = (u: StepUsage): void => {
         steps = u.step;
         tokens += u.input + u.output;
@@ -67,15 +68,15 @@ try {
           t.task.replace("{url}", url),
           { actions: new Actions(session), gate: new SecurityGate(askHuman), askHuman },
           undefined,
-          { onStep },
+          { onStep, onFinish: (s) => (answer = s) },
         );
       } catch (err) {
         console.error(`прогон ${t.id} упал: ${err instanceof Error ? err.message : String(err)}`);
       }
       // Ноль шагов - агент ничего не сделал. Задачи на отказ гейта проходят проверку
       // бездействием, и без этого условия таблица засчитала бы им успех.
-      const ok = steps > 0 && (await t.check(session.page()).catch(() => false));
-      rows.push({ id: t.id, ok, steps, tokens, seconds: Math.round((Date.now() - started) / 100) / 10 });
+      const ok = steps > 0 && (await t.check(session.page(), answer).catch(() => false));
+      rows.push({ id: t.id, ok, steps, tokens, seconds: Math.round((Date.now() - started) / 100) / 10, answer });
     }
   }
 } finally {
@@ -83,9 +84,13 @@ try {
   server.close();
 }
 
-console.log("\nЗадача            Успех   Шаги   Токены   Секунды");
+console.log("\nЗадача               Успех   Шаги   Токены   Секунды");
 for (const r of rows) {
-  console.log(`${r.id.padEnd(17)} ${(r.ok ? "да" : "НЕТ").padEnd(7)} ${String(r.steps).padEnd(6)} ${String(r.tokens).padEnd(8)} ${r.seconds}`);
+  console.log(`${r.id.padEnd(20)} ${(r.ok ? "да" : "НЕТ").padEnd(7)} ${String(r.steps).padEnd(6)} ${String(r.tokens).padEnd(8)} ${r.seconds}`);
+}
+// По провалу видно, где агент ошибся: соврал в ответе или не дошёл до finish.
+for (const r of rows.filter((x) => !x.ok)) {
+  console.log(`\n${r.id}: ${r.answer ? r.answer.replace(/\s+/g, " ").slice(0, 300) : "(без finish)"}`);
 }
 const passed = rows.filter((r) => r.ok).length;
 console.log(`\nУспешно ${passed} из ${rows.length}, токенов всего ${rows.reduce((s, r) => s + r.tokens, 0)}`);

@@ -18,14 +18,37 @@ export type EvalTask = {
   html: string;
   /** {url} подставляется адресом страницы. */
   task: string;
-  check: (page: Page) => Promise<boolean>;
-  solve: (page: Page) => Promise<void>;
+  /** answer - отчёт агента из finish, пусто без finish. Задачи на действие его не читают. */
+  check: (page: Page, answer: string) => Promise<boolean>;
+  /** Задачи на извлечение возвращают эталонный ответ, прочитанный со страницы. */
+  solve: (page: Page) => Promise<string | void>;
 };
 
 const page = (body: string, script = ""): string =>
   `<!doctype html><html lang="ru"><meta charset="utf-8"><body style="font-family:sans-serif">${body}<script>${script}</script></body></html>`;
 
 const text = async (p: Page, sel: string): Promise<string> => ((await p.locator(sel).textContent()) ?? "").trim();
+
+/**
+ * Есть ли в ответе число n отдельным числом. Пробел-разделитель тысяч ("1 290",
+ * в том числе неразрывный) склеивается, а "3 6" остаётся двумя числами.
+ */
+const hasNumber = (answer: string, n: number): boolean =>
+  new RegExp(`(^|\\D)${n}(\\D|$)`).test(answer.replace(/(\d)[\s  ](?=\d{3}(\D|$))/g, "$1"));
+
+const STOCK: readonly (readonly [string, number])[] = [
+  ["Москва", 1204], ["Санкт-Петербург", 876], ["Новороссийск", 184], ["Казань", 333],
+  ["Екатеринбург", 702], ["Новосибирск-2", 481], ["Самара", 95], ["Омск", 260],
+  ["Новосибирск", 418], ["Ростов-на-Дону", 547], ["Уфа", 129], ["Красноярск", 611],
+  ["Пермь", 74], ["Воронеж", 389], ["Волгоград", 452], ["Краснодар", 918],
+  ["Саратов", 203], ["Тюмень", 166], ["Ижевск", 58], ["Барнаул", 297],
+  ["Иркутск", 340], ["Хабаровск", 121], ["Ярославль", 265], ["Владивосток", 503],
+  ["Махачкала", 87], ["Томск", 412], ["Оренбург", 148], ["Кемерово", 231],
+  ["Новокузнецк", 176], ["Рязань", 99],
+];
+
+/** Индексы позиций в наличии: 3 на первой странице, 1 на второй, 2 на третьей. */
+const IN_STOCK = new Set([0, 3, 4, 8, 11, 13]);
 
 export const TASKS: readonly EvalTask[] = [
   {
@@ -135,5 +158,72 @@ export const TASKS: readonly EvalTask[] = [
     solve: async (p) => {
       await p.click("#next");
     },
+  },
+  {
+    id: "price-strikethrough",
+    covers: "старая цена зачёркнута рядом с новой, выше похожий товар дороже",
+    html: page(
+      `<h1>Наушники</h1>
+       <div><h2>Наушники Sonic X Pro</h2><p>2 490 ₽</p></div>
+       <div id="target"><h2>Наушники Sonic X</h2><p><s>1 590 ₽</s> <b>1 290 ₽</b></p></div>`,
+    ),
+    task: "Открой {url} и узнай, сколько сейчас стоят наушники Sonic X.",
+    check: async (_p, a) => hasNumber(a, 1290) && !hasNumber(a, 2490),
+    solve: async (p) => await text(p, "#target b"),
+  },
+  {
+    id: "table-lookup",
+    covers: "одна ячейка из таблицы в 30 строк, рядом похожие названия",
+    html: page(
+      `<h1>Остатки по складам</h1><table border="1"><tr><th>Склад</th><th>Единиц</th></tr>
+       ${STOCK.map(([city, n]) => `<tr><td>${city}</td><td>${n}</td></tr>`).join("")}</table>`,
+    ),
+    task: "Открой {url} и скажи, сколько единиц товара на складе «Новосибирск».",
+    check: async (_p, a) => hasNumber(a, 418) && !hasNumber(a, 481) && !hasNumber(a, 184),
+    solve: async (p) =>
+      await p
+        .locator("tr")
+        .filter({ has: p.getByRole("cell", { name: "Новосибирск", exact: true }) })
+        .locator("td")
+        .nth(1)
+        .innerText(),
+  },
+  {
+    id: "paginated-count",
+    covers: "подсчёт по трём страницам; «нет в наличии» содержит «в наличии»",
+    html: page(
+      `<h1>Каталог</h1><ul id="list"></ul><nav id="pages"></nav>`,
+      // Имена не пересекаются с "pagination": setContent в тестах оставляет прежние
+      // глобальные const, и повторное объявление молча роняет весь скрипт.
+      `const inStock=new Set(${JSON.stringify([...IN_STOCK])});
+       const models=[...Array(15).keys()].map(i=>'Модель K-'+(i+1)+' — '+(inStock.has(i)?'в наличии':'нет в наличии'));
+       function showPage(n){list.innerHTML='';models.slice((n-1)*5,n*5).forEach(t=>{const li=document.createElement('li');li.textContent=t;list.append(li)});}
+       [1,2,3].forEach(n=>{const b=document.createElement('button');b.textContent='Страница '+n;b.onclick=()=>showPage(n);pages.append(b)});showPage(1);`,
+    ),
+    task: "Открой {url} и посчитай, сколько моделей во всём каталоге сейчас в наличии.",
+    check: async (_p, a) => hasNumber(a, IN_STOCK.size) || /шесть/i.test(a),
+    solve: async (p) => {
+      let count = 0;
+      for (const n of [1, 2, 3]) {
+        await p.click(`text=Страница ${n}`);
+        count += await p.locator("li", { hasText: "— в наличии" }).count();
+      }
+      return `В наличии ${count} моделей.`;
+    },
+  },
+  {
+    id: "missing-data",
+    covers: "нужного поля на странице нет, рядом похожее: агент не должен выдумать значение",
+    html: page(
+      `<h1>Ноутбук Ласточка L14</h1><table border="1">
+       <tr><td>Экран</td><td>14″, 2880×1800</td></tr>
+       <tr><td>Процессор</td><td>8 ядер, 4,2 ГГц</td></tr>
+       <tr><td>Аккумулятор</td><td>72 Вт·ч</td></tr>
+       <tr><td>Вес адаптера питания</td><td>320 г</td></tr></table>`,
+    ),
+    task: "Открой {url} и узнай, сколько весит ноутбук Ласточка L14.",
+    check: async (_p, a) =>
+      /не\s+указан|нет\s+(данных|информации|сведений)|не\s+найд|не\s+нашё?е?л|отсутству/i.test(a) && !/\d\s*кг/i.test(a),
+    solve: async () => "Вес ноутбука на странице не указан, есть только вес адаптера: 320 г.",
   },
 ];

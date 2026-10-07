@@ -296,9 +296,15 @@ npx tsx scripts/smoke-observe.ts https://lavka.yandex.ru
 
 ## Measuring the agent
 
-The security eval checks the gate. `npm run eval` checks the agent: seven local pages in
-`evals/tasks.ts` (a blocking banner, a hidden radio button, pagination, search, two gate
-refusals, a prompt injection). Each check reads the final page state, not the model's words.
+The security eval checks the gate. `npm run eval` checks the agent: eleven local pages in
+`evals/tasks.ts`. Seven test actions (a blocking banner, a hidden radio button, pagination,
+search, two gate refusals, a prompt injection), and their checks read the final page state,
+not the model's words. Four test extracted data, and their checks read the `finish` report:
+a struck-out old price next to the new one, one cell in a 30-row table with look-alike
+names, a count across three pages where "нет в наличии" contains "в наличии", and a field
+missing from the page, where the right answer is "not listed" and an invented value fails.
+Checks use regexes, not an LLM judge, so a run costs nothing extra and gives the same verdict
+every time. The table prints the agent's report for every failed run.
 
 ```bash
 npm run eval                  # every task once, headless Chrome

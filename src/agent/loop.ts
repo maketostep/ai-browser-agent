@@ -26,6 +26,8 @@ export type RunOptions = {
   tokenBudget?: number;
   /** Вызывается после каждого ответа модели: так eval считает цену прогона. */
   onStep?: (usage: StepUsage) => void;
+  /** Отчёт из finish: так eval проверяет, что агент ответил, а не только что сделал. */
+  onFinish?: (summary: string) => void;
 };
 
 type Totals = { steps: number; input: number; output: number; cacheRead: number };
@@ -153,7 +155,7 @@ export async function runTask(
   const limits = { maxSteps: opts.maxSteps ?? env.maxSteps, tokenBudget: opts.tokenBudget ?? env.tokenBudget };
   const totals: Totals = { steps: 0, input: 0, output: 0, cacheRead: 0 };
   try {
-    return await runLoop(task, deps, signal, limits, totals, opts.onStep);
+    return await runLoop(task, deps, signal, limits, totals, opts);
   } finally {
     if (totals.steps > 0) {
       ui.info(`итого: шагов ${totals.steps}, токены in=${totals.input} out=${totals.output} cache_read=${totals.cacheRead}`);
@@ -167,7 +169,7 @@ async function runLoop(
   signal: AbortSignal | undefined,
   limits: { maxSteps: number; tokenBudget: number },
   totals: Totals,
-  onStep: RunOptions["onStep"],
+  opts: RunOptions,
 ): Promise<"cancelled" | "finished" | void> {
   if (signal?.aborted) return cancelled();
   // Гейт должен знать задачу целиком: без неё безобидная кнопка неотличима от шага
@@ -223,7 +225,7 @@ async function runLoop(
     totals.input += usage.input;
     totals.output += usage.output;
     totals.cacheRead += usage.cacheRead;
-    onStep?.(usage);
+    opts.onStep?.(usage);
 
     for (const block of response.content) {
       if (block.type === "thinking") ui.thinking(block.thinking);
@@ -325,6 +327,7 @@ async function runLoop(
 
     if (finished !== undefined) {
       ui.banner(["\x1b[1m✅ Задача завершена\x1b[0m", "", ...finished.split("\n")]);
+      opts.onFinish?.(finished);
       return "finished";
     }
   }
